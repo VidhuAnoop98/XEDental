@@ -372,17 +372,17 @@ class Prescription:
         self.med_tree_cat.heading("Category", text="Category")
 
         self.med_tree_type = ttk.Treeview(right_frame, columns=("Type",), show="headings", height=5)
-        self.med_tree_type.grid(row=1, column=0, padx=10, pady=10, sticky="ew")
+        self.med_tree_type.grid(row=0, column=1, padx=10, pady=10, sticky="ew")
         self.med_tree_type.heading("Type", text="Type")
         self.med_tree_type.column("Type", width=300, anchor="center")  
 
         self.med_tree_ing = ttk.Treeview(right_frame, columns=("Ingredients",), show="headings", height=5)
-        self.med_tree_ing.grid(row=2, column=0, padx=10, pady=10, sticky="ew")
+        self.med_tree_ing.grid(row=1, column=0, padx=10, pady=10, sticky="ew")
         self.med_tree_ing.heading("Ingredients", text="Ingredients")
         self.med_tree_ing.column("Ingredients", width=300, anchor="center") 
 
         self.med_tree_contra = ttk.Treeview(right_frame, columns=("Contra Indications",), show="headings", height=5)
-        self.med_tree_contra.grid(row=3, column=0, padx=10, pady=10, sticky="ew")
+        self.med_tree_contra.grid(row=1, column=1, padx=10, pady=10, sticky="ew")
         self.med_tree_contra.heading("Contra Indications", text="Contra Indications")
         self.med_tree_contra.column("Contra Indications", width=300, anchor="center")
 

@@ -290,6 +290,8 @@ class Bill:
         # Bill tree to show added treatments
         bill_columns = ("Tooth No", "Treatment", "Amount", "Doctor", "Type")
         bill_tree = ttk.Treeview(self.left_frame, columns=bill_columns, show="headings", height=8)
+        # keep a reference so other methods can access current treatments
+        self.bill_tree = bill_tree
         for col in bill_columns:
             bill_tree.heading(col, text=col)
             bill_tree.column(col, width=80)
@@ -404,7 +406,7 @@ class Bill:
         btn_removing.grid(row=0, column=5, sticky="w", padx=2, pady=2)
 
         btn_close = tk.Button(action_bar, text="Close", font=("Arial", 11),
-                      command=self.close)
+                  command=self.close)
         btn_close.grid(row=0, column=6, sticky="w", padx=2, pady=2)
 
         btn_bill_next = tk.Button(action_bar, text="Bill →", font=("Arial", 11, "bold"),

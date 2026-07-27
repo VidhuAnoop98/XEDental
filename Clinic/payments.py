@@ -1,3 +1,4 @@
+import re
 import os
 import sqlite3
 from accounts import get_db_connection, ACCENT_CASH, ACCENT_BANK, INACTIVE_BG, INACTIVE_FG
@@ -67,6 +68,7 @@ class Payments:
         title.pack(side="top", pady=10)
 
         # Toggle Buttons Frame
+        self.payment_account_type = tk.StringVar(value="CASH")
         form_toggle = tk.Frame(self.right_frame)
         form_toggle.pack(padx=12, pady=(0, 10))
 
@@ -296,64 +298,329 @@ class Payments:
     # VOUCHER PRINTING (PDF GENERATOR)
     # =========================================================================
     def print_voucher(self, v_type="Payment"):
-        try:
-            from reportlab.pdfgen import canvas
-            from reportlab.lib.pagesizes import A4
-        except ImportError:
-            messagebox.showerror(
-                "Missing Dependency",
-                "reportlab is not installed. Install it with: pip install reportlab"
-            )
-            return
+        import os
+        import sys
+        import subprocess
+        import tempfile
+        from datetime import date
+        
+        import tkinter as tk
+        from tkinter import ttk, messagebox
+        
+        from reportlab.lib.units import mm
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.colors import HexColor
+        
+        # ----------------------------------------------------------------------
+        # Organisation details shown on the voucher header - edit these
+        # ----------------------------------------------------------------------
+        ORG_NAME = "Dr.Anoop's Anupam Dental Clinic"
+        ORG_ADDRESS = "West Gate, Vaikom 686141"
+        ORG_PHONE = "+91 9446046868"  # e.g. "Ph : 0000000000" - leave blank to omit
+        
+        # Half A4, landscape (A4 cut horizontally)
+        PAGE_W, PAGE_H = 210 * mm, 148.5 * mm
+        
+        INK = HexColor("#1a1a1a")
+        
+        
+        # ----------------------------------------------------------------------
+        # Amount -> words (Indian numbering: crore / lakh / thousand)
+        # ----------------------------------------------------------------------
+        _ONES = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight",
+                "Nine", "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen",
+                "Sixteen", "Seventeen", "Eighteen", "Nineteen"]
+        _TENS = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy",
+                "Eighty", "Ninety"]
+        
+        
+        def _two_digit_words(n: int) -> str:
+            if n < 20:
+                return _ONES[n]
+            tens, ones = divmod(n, 10)
+            return _TENS[tens] + (" " + _ONES[ones] if ones else "")
+        
+        
+        def _three_digit_words(n: int) -> str:
+            if n >= 100:
+                hundred, rest = divmod(n, 100)
+                return _ONES[hundred] + " Hundred" + (" " + _two_digit_words(rest) if rest else "")
+            return _two_digit_words(n)
+        
+        
+        def amount_to_words(amount: float) -> str:
+            """Converts a rupee amount (e.g. 12500.50) to words, Indian numbering
+            system: 'Rupees Twelve Thousand Five Hundred and Fifty Paise Only'."""
+            rupees = int(amount)
+            paise = round((amount - rupees) * 100)
+        
+            if rupees == 0:
+                words = "Zero"
+            else:
+                parts = []
+                crore, rupees = divmod(rupees, 10000000)
+                lakh, rupees = divmod(rupees, 100000)
+                thousand, rupees = divmod(rupees, 1000)
+                hundred = rupees
+        
+                if crore:
+                    parts.append(_three_digit_words(crore) + " Crore")
+                if lakh:
+                    parts.append(_three_digit_words(lakh) + " Lakh")
+                if thousand:
+                    parts.append(_three_digit_words(thousand) + " Thousand")
+                if hundred:
+                    parts.append(_three_digit_words(hundred))
+                words = " ".join(parts)
+        
+            result = f"Rupees {words} Only"
+            if paise:
+                result = f"Rupees {words} and {_two_digit_words(paise)} Paise Only"
+            return result
+        
+        
+        # ----------------------------------------------------------------------
+        # Voucher drawing (half-A4 landscape, 210 x 148.5mm)
+        # ----------------------------------------------------------------------
+        def draw_voucher(c: canvas.Canvas, data: dict):
+            """
+            Draws one receipt/payment voucher filling the whole half-A4 page.
+            `data` keys: voucher_type, date_str, voucher_no, received_from,
+            address, mode, bank_name, cheque_no, cheque_date, ac_head,
+            narration, amount (float).
+            """
+            c.setFillColor(INK)
+            c.setStrokeColor(INK)
+            margin = 8 * mm
+        
+            # ---------- outer border ----------
+            # c.setLineWidth(0.8)
+            # c.rect(margin, margin, PAGE_W - 2 * margin, PAGE_H - 2 * margin, stroke=1, fill=0)
+        
+            # ---------- header ----------
+            c.setFont("Times-Bold", 16)
+            c.drawCentredString(PAGE_W / 2, PAGE_H - margin - 9 * mm, ORG_NAME)
+        
+            c.setFont("Helvetica", 8.5)
+            header_line2 = ORG_ADDRESS + (f"   {ORG_PHONE}" if ORG_PHONE else "")
+            c.drawCentredString(PAGE_W / 2, PAGE_H - margin - 14 * mm, header_line2)
+        
+            rule_y = PAGE_H - margin - 18 * mm
+            c.setLineWidth(0.6)
+            c.line(margin + 2 * mm, rule_y, PAGE_W - margin - 2 * mm, rule_y)
+        
+            # ---------- voucher title + no/date ----------
+            mode = data.get("mode", "CASH")
+            voucher_title = f"{mode.title()} {data.get('voucher_type', 'Receipt')} Voucher"
+            c.setFont("Helvetica-Bold", 12)
+            c.drawCentredString(PAGE_W / 2, rule_y - 8 * mm, voucher_title.upper())
+        
+            c.setFont("Helvetica", 9.5)
+            c.drawString(margin + 4 * mm, rule_y - 8 * mm, f"No : {data.get('voucher_no') or '-'}")
+            c.drawRightString(PAGE_W - margin - 4 * mm, rule_y - 8 * mm, f"Date : {data.get('date_str') or ''}")
+        
+            # ---------- field lines ----------
+            field_x_label = margin + 4 * mm
+            field_x_value = margin + 34 * mm
+            field_right_edge = PAGE_W - margin - 4 * mm
+            y = rule_y - 16 * mm
+            line_gap = 8.5 * mm
+        
+            def field_row(label, value, underline=True):
+                nonlocal y
+                c.setFont("Helvetica-Bold", 9.5)
+                c.drawString(field_x_label, y, label)
+                c.setFont("Helvetica", 10)
+                c.drawString(field_x_value, y, str(value) if value else "")
+                # if underline:
+                #     c.setLineWidth(0.4)
+                #     c.line(field_x_value, y - 1.5 * mm, field_right_edge, y - 1.5 * mm)
+                y -= line_gap
+        
+            if mode == "BANK":
+                nonlocal_y = y
 
-        tree = self.receipt_tree if v_type == "Receipt" else self.payment_tree
-        selected = tree.selection()
-        if not selected:
-            messagebox.showwarning("Select Voucher", f"Please select a {v_type.lower()} record from the table to print.")
-            return
+                c.setFont("Helvetica-Bold", 9.5)
+                c.drawString(field_x_label, nonlocal_y, "Mode :")
 
-        vals = tree.item(selected[0])['values']
-        v_id, v_date, v_no, person, mode, bank, head, narration, amount = vals
+                x = field_x_value
 
-        output_path = os.path.join(self.script_dir, f"{v_type.lower()}_voucher_{v_no}.pdf")
-        pdf = canvas.Canvas(output_path, pagesize=A4)
+                if data.get("bank_name"):
+                    c.setFont("Helvetica-Bold", 10)
+                    c.drawString(x, nonlocal_y, "Bank Name:")
+                    x += c.stringWidth("Bank Name:", "Helvetica-Bold", 10) + 2
 
-        # Header
-        pdf.setFont("Helvetica-Bold", 18)
-        pdf.drawString(100, 800, "XE DENTAL CLINIC")
-        pdf.setFont("Helvetica", 10)
-        pdf.drawString(100, 785, "West Gate, Vaikom, Kottayam Dist, Kerala - 686141")
+                    c.setFont("Helvetica", 10)
+                    bank = data["bank_name"]
+                    c.drawString(x, nonlocal_y, bank)
+                    x += c.stringWidth(bank, "Helvetica", 10) + 100
 
-        # Voucher Box Title
-        pdf.setFont("Helvetica-Bold", 14)
-        pdf.drawString(100, 750, f"{v_type.upper()} VOUCHER")
-        pdf.setFont("Helvetica", 11)
-        pdf.drawString(420, 750, f"Date: {v_date}")
-        pdf.drawString(420, 735, f"Voucher No: {v_no}")
+                if data.get("cheque_no"):
+                    c.setFont("Helvetica-Bold", 10)
+                    c.drawString(x, nonlocal_y, "Cheque No:")
+                    x += c.stringWidth("Cheque No:", "Helvetica-Bold", 10) + 2
 
-        pdf.line(100, 725, 500, 725)
+                    c.setFont("Helvetica", 10)
+                    c.drawString(x, nonlocal_y, data["cheque_no"])
 
-        # Fields
-        y = 700
-        pdf.drawString(100, y, f"{'Received From' if v_type == 'Receipt' else 'Paid To'}: {person}")
-        y -= 20
-        pdf.drawString(100, y, f"Payment Mode: {mode}" + (f" ({bank})" if bank else ""))
-        y -= 20
-        pdf.drawString(100, y, f"Account Head: {head}")
-        y -= 20
-        pdf.drawString(100, y, f"Narration / Details: {narration}")
-        y -= 25
+                # c.line(field_x_value, nonlocal_y - 1.5 * mm, field_right_edge, nonlocal_y - 1.5 * mm)
+                y -= line_gap
 
-        pdf.line(100, y, 500, y)
-        y -= 20
-
-        pdf.setFont("Helvetica-Bold", 12)
-        pdf.drawString(100, y, f"Total Amount: {amount}")
-
-        pdf.setFont("Helvetica", 10)
-        pdf.drawString(100, 550, "Authorized Signature: __________________")
-
-        pdf.save()
-        messagebox.showinfo("Voucher Generated", f"{v_type} voucher PDF generated successfully:\n{output_path}")
+            else:
+                field_row("Mode :", "Cash")
+            
+            field_row("Received From :" if data.get("voucher_type", "Receipt") == "Receipt" else "Paid To :",
+                    data.get("received_from", ""))
+            field_row("Address :", data.get("address", ""))
 
         
+            # Mode-specific line (bank details) or narration, whichever mode
+            # if mode == "BANK":
+            #     bank_bits = []
+            #     if data.get("bank_name"):
+            #         bank_bits.append(f"Bank: {data['bank_name']}")
+            #     if data.get("cheque_no"):
+            #         bank_bits.append(f"Cheque/Ref No: {data['cheque_no']}")
+            #     if data.get("cheque_date"):
+            #         bank_bits.append(f"Dated: {data['cheque_date']}")
+            #     field_row("Bank :", "   ".join(bank_bits))
+            # else:
+            #     field_row("Mode :", "Cash")
+
+            field_row("Narration :", data.get("narration", ""))        
+            field_row("A/c Head :", data.get("ac_head", ""))
+            field_row("Sum of Rupees :", amount_to_words(data.get("amount", 0.0))) 
+        
+            # ---------- amount box (bottom-right) ----------
+            box_w, box_h = 55 * mm, 16 * mm
+            box_x = PAGE_W - margin - 4 * mm - box_w
+            box_y = margin + 16 * mm
+            c.setLineWidth(0.9)
+            c.rect(box_x, box_y, box_w, box_h, stroke=1, fill=0)
+            c.setFont("Helvetica-Bold", 9)
+            c.drawString(box_x + 3 * mm, box_y + box_h - 6 * mm, "Amount")
+            c.setFont("Helvetica-Bold", 15)
+            c.drawRightString(box_x + box_w - 4 * mm, box_y + 4.5 * mm, f"Rs. {data.get('amount', 0.0):,.2f}")
+        
+            # ---------- signatures ----------
+            sig_y = margin + 6 * mm
+            c.setFont("Helvetica", 9)
+            c.setLineWidth(0.4)
+            c.line(margin + 4 * mm, sig_y + 6 * mm, margin + 55 * mm, sig_y + 6 * mm)
+            c.drawString(margin + 4 * mm, sig_y, "Receiver's Signature")
+        
+            c.line(box_x - 60 * mm, sig_y + 6 * mm, box_x - 5 * mm, sig_y + 6 * mm)
+            c.drawString(box_x - 60 * mm, sig_y, "Authorised Signatory")
+        
+        
+        def generate_voucher_pdf(data: dict, filepath: str = None) -> str:
+            """Builds the half-A4 voucher PDF and returns the file path."""
+            if filepath is None:
+                # Use paid_to name for the filename
+                safe_name = re.sub(r'[^\w\s-]', '', str(data.get('received_from', 'voucher'))).strip().replace(' ', '_')
+                voucher_no = re.sub(r'[^\w-]', '', str(data.get('voucher_no', ''))).strip()
+                filename = f"{data.get('voucher_type')}_{safe_name}_{voucher_no}.pdf" if voucher_no else f"{data.get('voucher_type')}_{safe_name}.pdf"
+                filepath = os.path.join(tempfile.gettempdir(), filename)
+        
+            c = canvas.Canvas(filepath, pagesize=(PAGE_W, PAGE_H))
+            draw_voucher(c, data)
+            c.showPage()
+            c.save()
+            return filepath
+        
+        
+        def open_for_printing(filepath: str):
+            """Opens the PDF with the system's default viewer so the user can
+            review and print it (Ctrl+P)."""
+            try:
+                if sys.platform.startswith("win"):
+                    os.startfile(filepath)  # noqa: S606 (Windows only)
+                elif sys.platform == "darwin":
+                    subprocess.run(["open", filepath], check=False)
+                else:
+                    subprocess.run(["xdg-open", filepath], check=False)
+            except Exception as exc:
+                messagebox.showwarning(
+                    "Could not open automatically",
+                    f"The voucher was saved to:\n{filepath}\n\n"
+                    f"Please open it manually to print. ({exc})",
+                )
+        
+        
+        # ---- get selected row from treeview ----
+        selected = self.payment_tree.selection()
+        if not selected:
+            messagebox.showwarning("Select Voucher", "Please select a payment record from the table to print.")
+            return
+
+        vals = self.payment_tree.item(selected[0])['values']
+        # Treeview columns: ID, Date, CHS_NO, Paid_To, Mode, Bank_Name, A_C_Head, Narration, Amount
+        rec_id = vals[0]
+
+        # Fetch full record from DB (treeview doesn't show address, cheque details)
+        try:
+            conn = get_db_connection(self.app)
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT id, DATE, CHS_NO, PAID_TO, transaction_type, ADDRESS, A_C_HEAD, Narration, AMOUNT "
+                "FROM Receipts WHERE id=?", (rec_id,)
+            )
+            row = cursor.fetchone()
+            conn.close()
+        except sqlite3.Error as e:
+            messagebox.showerror("Database Error", f"Error fetching record: {e}")
+            return
+
+        if not row:
+            messagebox.showerror("Error", "Could not find the selected record in the database.")
+            return
+
+        rec_id, rec_date, chs_no, paid_to, t_type, address_raw, ac_head, narration, amount = row
+        mode = "BANK" if "BANK" in str(t_type).upper() else "CASH"
+
+        # Parse address and bank info from stored format "address|Bank:bank_name"
+        address = ""
+        bank_name = ""
+        cheque_no = ""
+        cheque_date = ""
+        if address_raw:
+            if "|Bank:" in str(address_raw):
+                parts = str(address_raw).split("|Bank:")
+                address = parts[0]
+                bank_name = parts[1] if len(parts) > 1 else ""
+            else:
+                address = str(address_raw)
+                    
+        # Extract cheque info from narration and remove it
+        if narration and "(Chq:" in str(narration):
+            match = re.search(r"\(Chq:\s*([^)]+)\)", narration)
+            if match:
+                cheque_no = match.group(1).strip()
+
+        # Remove "(Chq: xxxx)" from narration
+        if narration:
+            narration = re.sub(r"\s*\(Chq:\s*[^)]+\)", "", narration).strip()
+
+        data = dict(
+            voucher_type="Payment",
+            date_str=rec_date,
+            voucher_no=chs_no,
+            received_from=paid_to,
+            address=address,
+            mode=mode,
+            bank_name=bank_name,
+            cheque_no=cheque_no,
+            cheque_date=cheque_date,
+            ac_head=ac_head,
+            narration=narration,
+            amount=float(amount),
+        )
+
+        try:
+            filepath = generate_voucher_pdf(data)
+        except Exception as exc:
+            messagebox.showerror("Error", f"Could not generate voucher PDF:\n{exc}")
+            return
+
+        open_for_printing(filepath)
+

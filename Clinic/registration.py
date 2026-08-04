@@ -6,6 +6,7 @@ import os
 from bill import Bill
 from doctors_d import Doctors
 from letter_paper import Letter
+from card import Card
 
 def get_db_connection(app=None):
     if app and hasattr(app, "get_db_connection"):
@@ -631,145 +632,17 @@ class Registration:
         b.bill()
 
     def idcard(self):
-        from reportlab.lib.pagesizes import A4
-        from reportlab.lib.units import mm
-        from reportlab.pdfgen import canvas
-        from reportlab.lib.colors import HexColor
-        from reportlab.lib.utils import ImageReader
-        
-        PAGE_W, PAGE_H = A4
-        
-        # ----------------------------------------------------------------------
-        # Logo image - place "Dental_logo.png" next to this script (or point
-        # LOGO_PATH elsewhere). A drawn placeholder is used if it's missing.
-        # ----------------------------------------------------------------------
-        SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-        LOGO_PATH = os.path.join(SCRIPT_DIR, "Dental_logo.png")
-        
-        # ----------------------------------------------------------------------
-        # Editable clinic data
-        # ----------------------------------------------------------------------
-        CLINIC_NAME = "ANUPAM DENTAL CLINIC"
-        CLINIC_LINE = "West Gate Vaikom - 686141, Ph : 216878 Res : 216858"
-        CLINIC_HOURS = "Clinic Hours :10:00 AM to 07:00 PM, Tuesday Holiday"
-        FIELD_LABELS = ["Reg.No.", "PID", "Date", "Age", "Name", "Address"]
-        
-        # Reference aspect ratio taken from the original printed card (w / h)
-        CARD_ASPECT = 716 / 492
-        
-        INK = HexColor("#1a1a1a")
-        
-        
-        # ----------------------------------------------------------------------
-        # Logo drawing (image with graceful fallback)
-        # ----------------------------------------------------------------------
-        def draw_logo(c: canvas.Canvas, cx: float, cy: float, box_w: float, box_h: float):
-            """Draws the clinic logo centred at (cx, cy), fitted inside box_w x box_h."""
-            if os.path.isfile(LOGO_PATH):
-                img = ImageReader(LOGO_PATH)
-                iw, ih = img.getSize()
-                scale = min(box_w / iw, box_h / ih)
-                w, h = iw * scale, ih * scale
-                c.drawImage(
-                    img,
-                    cx - w / 2,
-                    cy - h / 2,
-                    width=w,
-                    height=h,
-                    mask="auto",
-                    preserveAspectRatio=True,
-                )
-                return
-        
-            # ---- Fallback placeholder if the PNG can't be found ----
-            r = min(box_w, box_h) / 2
-            c.saveState()
-            c.setStrokeColor(INK)
-            c.setDash(1, 2)
-            c.setLineWidth(0.7)
-            c.circle(cx, cy, r, stroke=1, fill=0)
-            c.circle(cx, cy, r - 1.5 * mm, stroke=1, fill=0)
-            c.restoreState()
-            c.setFillColor(INK)
-            c.setFont("Helvetica-Bold", r * 0.22)
-            c.drawCentredString(cx, cy + r * 0.15, "ANUPAM")
-            c.setFont("Helvetica", r * 0.16)
-            c.drawCentredString(cx, cy - r * 0.35, "DENTAL")
-            c.drawCentredString(cx, cy - r * 0.60, "CLINIC")
-        
-        
-        # ----------------------------------------------------------------------
-        # Card drawing - all sizes are proportional to the card's own w / h.
-        # ----------------------------------------------------------------------
-        def draw_card(c: canvas.Canvas, x0: float, y0: float, w: float, h: float):
-            """Draws one registration card inside the rectangle (x0, y0, w, h)."""
-            c.setFillColor(INK)
-            c.setStrokeColor(INK)
-        
-            def top_y(frac):
-                """Convert a fraction-from-top (0=top edge, 1=bottom edge) to an
-                absolute canvas y coordinate."""
-                return y0 + h * (1 - frac)
-        
-            # ---------- outer card border ----------
-            c.setLineWidth(0.4)
-            c.roundRect(x0, y0, w, h, 2 * mm, stroke=1, fill=0)
-        
-            # ---------- title box ----------
-            title_top = top_y(0.06)
-            title_bottom = top_y(0.20)
-            box_margin = w * 0.035
-            c.setLineWidth(0.9)
-            c.rect(x0 + box_margin, title_bottom, w - 2 * box_margin, title_top - title_bottom, stroke=1, fill=0)
-            c.setFont("Times-Bold", h * 0.095)
-            c.drawCentredString(x0 + w / 2, (title_top + title_bottom) / 2 - h * 0.028, CLINIC_NAME)
-        
-            # ---------- logo (top-right, alongside the field labels) ----------
-            logo_cx = x0 + w * 0.685
-            logo_cy = top_y(0.44)
-            draw_logo(c, logo_cx, logo_cy, w * 0.30, h * 0.42)
-        
-            # ---------- field labels (left column) ----------
-            field_x = x0 + w * 0.045
-            field_fracs_top = 0.30
-            field_fracs_bottom = 0.70
-            n = len(FIELD_LABELS)
-            step = (field_fracs_bottom - field_fracs_top) / (n - 1)
-            c.setFont("Times-Roman", h * 0.062)
-            for i, label in enumerate(FIELD_LABELS):
-                frac = field_fracs_top + step * i
-                c.drawString(field_x, top_y(frac), label)
-        
-            # ---------- horizontal rule ----------
-            rule_y = top_y(0.755)
-            c.setLineWidth(0.8)
-            c.line(x0 + w * 0.045, rule_y, x0 + w * 0.955, rule_y)
-        
-            # ---------- address / phone line ----------
-            c.setFont("Times-Roman", h * 0.052)
-            c.drawCentredString(x0 + w / 2, top_y(0.815), CLINIC_LINE)
-        
-            # ---------- footer box: clinic hours ----------
-            footer_top = top_y(0.865)
-            footer_bottom = top_y(0.955)
-            c.setLineWidth(0.9)
-            c.rect(x0 + box_margin, footer_bottom, w - 2 * box_margin, footer_top - footer_bottom, stroke=1, fill=0)
-            c.setFont("Times-Roman", h * 0.052)
-            c.drawCentredString(x0 + w / 2, (footer_top + footer_bottom) / 2 - h * 0.017, CLINIC_HOURS)
-        
-        
-        def generate_pdf(filepath: str):
-            """Creates the 1-page single-card PDF at the given filepath."""
-            c = canvas.Canvas(filepath, pagesize=A4)
-        
-            card_h = 120 * mm
-            card_w = card_h * CARD_ASPECT
-            x0 = (PAGE_W - card_w) / 2
-            y0 = (PAGE_H - card_h) / 2
-            draw_card(c, x0, y0, card_w, card_h)
-        
-            c.showPage()
-            c.save()
+        patient_data = {
+            "patientid": self.bill_patientid.get().strip(),
+            "regno": self.bill_regno.get().strip(),
+            "patientname": self.bill_patientname.get().strip(),
+            "address1": self.bill_address1.get().strip(),
+            "address2": self.bill_address2.get().strip(),
+            "age": self.bill_age.get().strip(),
+        }
+        c = Card(self.app)
+        c.patient_data = patient_data
+        c.idcard()
 
     def close(self):
         self.app.registration()

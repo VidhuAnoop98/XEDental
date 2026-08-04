@@ -1,3 +1,4 @@
+from Clinic.card import Card
 import warnings
 import warnings
 from PIL import ImageMode
@@ -12,6 +13,8 @@ import os
 import subprocess
 import sys
 from letter_paper import Letter
+from card import Card
+
 
 class Personal:
     def __init__(self, app):
@@ -24,9 +27,10 @@ class Personal:
         workspace = app.workspace
 
         col1_buttons = [
-            ("Doctors Details",self.Doctors_Details),
+            ("Doctors Details",self.Doctors_Details), 
             ("Letter Pad",self.Letter_Pad),
-            ("Plain Priscription",self.Plain_Priscription),
+            ("Plain Prescription",self.Plain_Priscription),
+            ("ID Card",self.select_card),
             ("Change Telephone",self.Change_Telephone),
             ("Fees Details",self.Fees_Details),
             ("Add New Lab",self.Add_New_Lab),
@@ -383,6 +387,9 @@ class Personal:
 
     def Plain_Priscription(self):
         Letter(self.app, mode="plain")
+
+    def select_card(self):
+        Card(self.app).select_card()
 
     def Change_Telephone(self):
         win = tk.Toplevel(self.app.root)

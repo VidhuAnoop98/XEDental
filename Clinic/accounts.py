@@ -239,6 +239,10 @@ class Accounts:
         win = tk.Toplevel(self.root)
         win.title("Cash Deposit")
         win.geometry("450x320")
+        win.update_idletasks()
+        sw = win.winfo_screenwidth()
+        sh = win.winfo_screenheight()
+        win.geometry(f"450x320+{(sw - 450) // 2}+{(sh - 320) // 2}")
         win.configure(bg="white")
         win.transient(self.root)
         win.grab_set()
@@ -319,7 +323,7 @@ class Accounts:
         btn_frame = tk.Frame(win, bg="white")
         btn_frame.pack(pady=15)
         tk.Button(btn_frame, text="Save Deposit", font=("Arial", 10, "bold"), bg="green", fg="white", width=14, command=save_deposit).pack(side="left", padx=10)
-        tk.Button(btn_frame, text="Cancel", font=("Arial", 10), bg="gray", fg="white", width=10, command=win.destroy).pack(side="left", padx=10)
+        tk.Button(btn_frame, text="Close", font=("Arial", 10), bg="gray", fg="white", width=10, command=win.destroy).pack(side="left", padx=10)
 
     # =========================================================================
     # WITHDRAWAL
@@ -329,6 +333,10 @@ class Accounts:
         win = tk.Toplevel(self.root)
         win.title("Cash Withdrawal")
         win.geometry("480x360")
+        win.update_idletasks()
+        sw = win.winfo_screenwidth()
+        sh = win.winfo_screenheight()
+        win.geometry(f"480x360+{(sw - 480) // 2}+{(sh - 360) // 2}")
         win.configure(bg="white")
         win.transient(self.root)
         win.grab_set()
@@ -422,7 +430,7 @@ class Accounts:
         btn_frame = tk.Frame(win, bg="white")
         btn_frame.pack(pady=15)
         tk.Button(btn_frame, text="Save Withdrawal", font=("Arial", 10, "bold"), bg="green", fg="white", width=16, command=save_withdrawal).pack(side="left", padx=10)
-        tk.Button(btn_frame, text="Cancel", font=("Arial", 10), bg="gray", fg="white", width=10, command=win.destroy).pack(side="left", padx=10)
+        tk.Button(btn_frame, text="Close", font=("Arial", 10), bg="gray", fg="white", width=10, command=win.destroy).pack(side="left", padx=10)
 
     
     def head(self):

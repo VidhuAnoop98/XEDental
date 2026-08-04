@@ -34,7 +34,7 @@ class dental:
 
         self.menu()
         self.create_nav()
-        self.accounts()
+        self.reports()
         self.root.mainloop() 
 
     def menu(self):

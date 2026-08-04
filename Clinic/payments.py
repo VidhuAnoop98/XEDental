@@ -219,7 +219,7 @@ class Payments:
 
         full_narration = narration
         if mode == "BANK" and cheque_no:
-            full_narration = f"{narration} (Chq: {cheque_no})" if narration else f"Chq: {cheque_no}"
+            full_narration = f"{narration}"
 
         try:
             conn = get_db_connection(self.app)
@@ -489,16 +489,16 @@ class Payments:
 
             field_row("Narration :", data.get("narration", ""))        
             field_row("A/c Head :", data.get("ac_head", ""))
-            field_row("Sum of Rupees :", amount_to_words(data.get("amount", 0.0))) 
+            field_row("Rupees in words :", amount_to_words(data.get("amount", 0.0))) 
         
             # ---------- amount box (bottom-right) ----------
-            box_w, box_h = 55 * mm, 16 * mm
+            box_w, box_h = 50 * mm, 16 * mm
             box_x = PAGE_W - margin - 4 * mm - box_w
             box_y = margin + 16 * mm
             c.setLineWidth(0.9)
             c.rect(box_x, box_y, box_w, box_h, stroke=1, fill=0)
             c.setFont("Helvetica-Bold", 9)
-            c.drawString(box_x + 3 * mm, box_y + box_h - 6 * mm, "Amount")
+            # c.drawString(box_x + 3 * mm, box_y + box_h - 6 * mm, "Amount")
             c.setFont("Helvetica-Bold", 15)
             c.drawRightString(box_x + box_w - 4 * mm, box_y + 4.5 * mm, f"Rs. {data.get('amount', 0.0):,.2f}")
         
@@ -530,21 +530,17 @@ class Payments:
         
         
         def open_for_printing(filepath: str):
-            """Opens the PDF with the system's default viewer so the user can
-            review and print it (Ctrl+P)."""
             try:
-                if sys.platform.startswith("win"):
-                    os.startfile(filepath)  # noqa: S606 (Windows only)
+                if hasattr(os, "startfile"):
+                    os.startfile(filepath)
+                elif sys.platform.startswith("linux"):
+                    subprocess.Popen(["xdg-open", filepath])
                 elif sys.platform == "darwin":
-                    subprocess.run(["open", filepath], check=False)
+                    subprocess.Popen(["open", filepath])
                 else:
-                    subprocess.run(["xdg-open", filepath], check=False)
+                    subprocess.Popen(["cmd", "/c", "start", "", filepath])
             except Exception as exc:
-                messagebox.showwarning(
-                    "Could not open automatically",
-                    f"The voucher was saved to:\n{filepath}\n\n"
-                    f"Please open it manually to print. ({exc})",
-                )
+                messagebox.showwarning("Open PDF", f"Could not open the PDF automatically.\n{exc}")
         
         
         # ---- get selected row from treeview ----
@@ -616,11 +612,146 @@ class Payments:
             amount=float(amount),
         )
 
-        try:
-            filepath = generate_voucher_pdf(data)
-        except Exception as exc:
-            messagebox.showerror("Error", f"Could not generate voucher PDF:\n{exc}")
-            return
+        # Build Tkinter workspace
+        self.app.clear_workspace()
+        self.app.workspace = tk.Frame(self.app.root, bd=3, relief="solid")
+        self.app.workspace.pack(padx=10, pady=10, fill="both", expand=True)
+        ws = self.app.workspace
 
-        open_for_printing(filepath)
+        AVAIL_H = 600
+        AVAIL_W = 500
+        SCALE   = min(AVAIL_H / PAGE_H, AVAIL_W / PAGE_W)
+        CW      = int(PAGE_W * SCALE)
+        CH      = int(PAGE_H * SCALE)
+        mm_px   = SCALE * 2.8346
+
+        outer = tk.Frame(ws, bg="#c0c0c0")
+        outer.pack(fill="both", expand=True, padx=10, pady=(6, 0))
+
+        vsb = tk.Scrollbar(outer, orient="vertical")
+        vsb.pack(side="right", fill="y")
+        hsb = tk.Scrollbar(outer, orient="horizontal")
+        hsb.pack(side="bottom", fill="x")
+
+        cv = tk.Canvas(outer, bg="#c0c0c0", width=CW+10, height=CH+1,
+                       scrollregion=(0, 0, CW + 20, CH + 20),
+                       yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+        cv.pack(fill="both", expand=True)
+        vsb.config(command=cv.yview)
+        hsb.config(command=cv.xview)
+
+        canvas_width = CW + 950
+        OX = (canvas_width - CW) // 2
+        OY = 10
+        cv.create_rectangle(OX+4, OY+4, OX+CW+4, OY+CH+4, fill="#888888", outline="")
+        cv.create_rectangle(OX, OY, OX+CW, OY+CH, fill="white", outline="#aaaaaa", width=1)
+
+        def ppx(pt):  return OX + int(pt * SCALE)
+        def ppy(pt):  return OY + int((PAGE_H - pt) * SCALE)
+        def pcx():    return OX + CW // 2
+        def smm(v):   return int(v * mm_px)
+
+        margin = 8 * mm
+        cv.create_text(pcx(), ppy(PAGE_H - margin - 9 * mm), text=ORG_NAME,
+                       font=("Times", max(10, smm(6)), "bold"), fill="#1a1a1a")
+
+        header_line2 = ORG_ADDRESS + (f"   {ORG_PHONE}" if ORG_PHONE else "")
+        cv.create_text(pcx(), ppy(PAGE_H - margin - 14 * mm), text=header_line2,
+                       font=("Arial", max(8, smm(3))), fill="#1a1a1a")
+
+        rule_y = PAGE_H - margin - 18 * mm
+        cv.create_line(ppx(margin + 2 * mm), ppy(rule_y), ppx(PAGE_W - margin - 2 * mm), ppy(rule_y), fill="#1a1a1a", width=1)
+
+        voucher_title = f"{mode.title()} {data.get('voucher_type', 'Receipt')} Voucher"
+        cv.create_text(pcx(), ppy(rule_y - 8 * mm), text=voucher_title.upper(),
+                       font=("Arial", max(9, smm(4)), "bold"), fill="#1a1a1a")
+
+        cv.create_text(ppx(margin + 4 * mm), ppy(rule_y - 8 * mm), text=f"No : {data.get('voucher_no') or '-'}",
+                       font=("Arial", max(8, smm(3.5))), fill="#1a1a1a", anchor="w")
+        cv.create_text(ppx(PAGE_W - margin - 4 * mm), ppy(rule_y - 8 * mm), text=f"Date : {data.get('date_str') or ''}",
+                       font=("Arial", max(8, smm(3.5))), fill="#1a1a1a", anchor="e")
+
+        field_x_label = margin + 4 * mm
+        field_x_value = margin + 34 * mm
+        y = rule_y - 16 * mm
+        line_gap = 8.5 * mm
+
+        def field_row_tk(label, value):
+            nonlocal y
+            cv.create_text(ppx(field_x_label), ppy(y), text=label, font=("Arial", max(8, smm(3.5)), "bold"), fill="#1a1a1a", anchor="w")
+            cv.create_text(ppx(field_x_value), ppy(y), text=str(value) if value else "", font=("Arial", max(8, smm(3.5))), fill="#1a1a1a", anchor="w")
+            y -= line_gap
+
+        if mode == "BANK":
+            nonlocal_y = y
+            cv.create_text(ppx(field_x_label), ppy(nonlocal_y), text="Mode :", font=("Arial", max(8, smm(3.5)), "bold"), fill="#1a1a1a", anchor="w")
+            x = field_x_value
+            if data.get("bank_name"):
+                cv.create_text(ppx(x), ppy(nonlocal_y), text="Bank Name:", font=("Arial", max(8, smm(3.5)), "bold"), fill="#1a1a1a", anchor="w")
+                x += smm(18)
+                bank = data["bank_name"]
+                cv.create_text(ppx(x), ppy(nonlocal_y), text=bank, font=("Arial", max(8, smm(3.5))), fill="#1a1a1a", anchor="w")
+                x += len(bank) * smm(2) + smm(10)
+            if data.get("cheque_no"):
+                cv.create_text(ppx(x), ppy(nonlocal_y), text="Cheque No:", font=("Arial", max(8, smm(3.5)), "bold"), fill="#1a1a1a", anchor="w")
+                x += smm(18)
+                cv.create_text(ppx(x), ppy(nonlocal_y), text=data["cheque_no"], font=("Arial", max(8, smm(3.5))), fill="#1a1a1a", anchor="w")
+            y -= line_gap
+        else:
+            field_row_tk("Mode :", "Cash")
+
+        field_row_tk("Paid To :", data.get("received_from", ""))
+        field_row_tk("Address :", data.get("address", ""))
+        field_row_tk("Narration :", data.get("narration", ""))
+        field_row_tk("A/c Head :", data.get("ac_head", ""))
+        field_row_tk("Rupees in words :", amount_to_words(data.get("amount", 0.0)))
+
+        box_w, box_h = 50 * mm, 16 * mm
+        box_x = PAGE_W - margin - 4 * mm - box_w
+        box_y = margin + 16 * mm
+        cv.create_rectangle(ppx(box_x), ppy(box_y), ppx(box_x + box_w), ppy(box_y + box_h), outline="#1a1a1a", width=1)
+        cv.create_text(ppx(box_x + box_w - 4 * mm), ppy(box_y + 4.5 * mm), text=f"Rs. {data.get('amount', 0.0):,.2f}",
+                       font=("Arial", max(10, smm(5)), "bold"), fill="#1a1a1a", anchor="e")
+
+        sig_y = margin + 6 * mm
+        cv.create_line(ppx(margin + 4 * mm), ppy(sig_y + 6 * mm), ppx(margin + 55 * mm), ppy(sig_y + 6 * mm), fill="#1a1a1a", width=1)
+        cv.create_text(ppx(margin + 4 * mm), ppy(sig_y), text="Receiver's Signature", font=("Arial", max(8, smm(3))), fill="#1a1a1a", anchor="w")
+
+        cv.create_line(ppx(box_x - 60 * mm), ppy(sig_y + 6 * mm), ppx(box_x - 5 * mm), ppy(sig_y + 6 * mm), fill="#1a1a1a", width=1)
+        cv.create_text(ppx(box_x - 60 * mm), ppy(sig_y), text="Authorised Signatory", font=("Arial", max(8, smm(3))), fill="#1a1a1a", anchor="w")
+
+        btn_bar = tk.Frame(ws)
+        btn_bar.pack(pady=8)
+
+        def _generate_pdf():
+            from tkinter import filedialog
+            safe_name = re.sub(r'[^\w\s-]', '', str(data.get('received_from', 'voucher'))).strip().replace(' ', '_')
+            voucher_no = re.sub(r'[^\w-]', '', str(data.get('voucher_no', ''))).strip()
+            def_file = f"{data.get('voucher_type')}_{safe_name}_{voucher_no}.pdf" if voucher_no else f"{data.get('voucher_type')}_{safe_name}.pdf"
+            filepath = filedialog.asksaveasfilename(
+                defaultextension=".pdf", initialfile=def_file,
+                filetypes=[("PDF files", "*.pdf")],
+                title="Save Voucher PDF As"
+            )
+            if not filepath: return
+            try:
+                generate_voucher_pdf(data, filepath)
+                messagebox.showinfo("Done", f"Voucher saved:\n{filepath}")
+                open_for_printing(filepath)
+            except Exception as exc:
+                messagebox.showerror("Error", f"PDF generation failed:\n{exc}")
+
+        def _print_now():
+            try:
+                filepath = generate_voucher_pdf(data)
+                open_for_printing(filepath)
+            except Exception as exc:
+                messagebox.showerror("Error", f"Could not print PDF:\n{exc}")
+
+        tk.Button(btn_bar, text="📄  Generate PDF", font=("Arial", 11), width=16,
+                  bg="#1565C0", fg="white", command=_generate_pdf).grid(row=0, column=0, padx=8)
+        tk.Button(btn_bar, text="🖨  Open / Print", font=("Arial", 11), width=16,
+                  bg="#2E7D32", fg="white", command=_print_now).grid(row=0, column=1, padx=8)
+        tk.Button(btn_bar, text="Close", font=("Arial", 11), width=10,
+                  command=self.payments).grid(row=0, column=2, padx=8)
 

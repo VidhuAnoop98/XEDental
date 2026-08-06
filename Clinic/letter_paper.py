@@ -18,6 +18,8 @@ class Letter:
             self.Letter_Pad()
         elif mode == "plain":
             self.Plain_Priscription()
+        elif mode == "form":
+            self.todayapp()
     
     def init_db(self):
         self.conn = sqlite3.connect("dental.db")
@@ -460,7 +462,7 @@ class Letter:
             header_cx1 = PAGE_W * 0.80
         
             c.setFont("Times-Bold", 20)
-            c.drawCentredString(header_cx, PAGE_H - 30 * mm, CLINIC_NAME)
+            c.drawCentredString(header_cx, PAGE_H - 15 * mm, CLINIC_NAME)
         
             c.setFont("Helvetica", 8.5)
             c.drawCentredString(header_cx, PAGE_H - 20 * mm, CLINIC_ADDRESS)
@@ -476,6 +478,7 @@ class Letter:
             margin = 1 * mm
             c.setLineWidth(0.8)
             c.line(margin, top_line_y, PAGE_W - margin, top_line_y) 
+            c.line(margin + 80, top_line_y - 470, PAGE_W - margin, top_line_y - 470)
         
             # ---------- Divider + writing-area box (right side, like the original) ----------
             divider_x = margin + 50 * mm
@@ -539,7 +542,7 @@ class Letter:
 
             # ---------- Footer ----------
             c.setFont("Helvetica", 8.5)
-            c.drawCentredString(header_cx, 6 * mm, CLINIC_HOURS)
+            c.drawCentredString(header_cx - 50, 6 * mm, CLINIC_HOURS)
         
         
         def generate_pdf(filepath: str):
@@ -610,18 +613,39 @@ class Letter:
                            logo_cx+logo_r, logo_cy+logo_r, outline="#555")
 
         # Header Text
-        cv.create_text(pcx(), ppy(PAGE_H - 30*mm), text=CLINIC_NAME,
+        cv.create_text(pcx() + 40, ppy(PAGE_H - 13*mm), text=CLINIC_NAME,
                        font=("Times New Roman", max(10, smm(6)), "bold"), fill="#1a1a1a")
-        cv.create_text(pcx(), ppy(PAGE_H - 36*mm), text=CLINIC_ADDRESS,
+        cv.create_text(pcx() + 20, ppy(PAGE_H - 20*mm), text=CLINIC_ADDRESS,
                        font=("Arial", max(8, smm(3))), fill="#333")
-        cv.create_text(pcx(), ppy(PAGE_H - 42*mm), text=f"{CLINIC_PHONE}    {CLINIC_RESI}",
+        cv.create_text(pcx() + 140, ppy(PAGE_H - 27*mm), text=CLINIC_PHONE,
+                       font=("Arial", max(8, smm(3))), fill="#333")
+        cv.create_text(pcx() + 130, ppy(PAGE_H - 32*mm), text=CLINIC_RESI,
                        font=("Arial", max(8, smm(3))), fill="#333")
 
         # Horizontal rule under header
-        rule_y   = ppy(PAGE_H - 47*mm)
-        marg_px  = ppx(10*mm)
-        right_px = ppx(PAGE_W - 10*mm)
+        rule_y   = ppy(PAGE_H - 37*mm)
+        marg_px  = ppx(1*mm)
+        right_px = ppx(PAGE_W - 1*mm)
         cv.create_line(marg_px, rule_y, right_px, rule_y, fill="#333", width=1)
+        cv.create_line(marg_px + 80 , rule_y + 460, right_px, rule_y + 460, fill="#333", width=1)
+        
+        #-------------Date & Time--------------------------------------
+        date_box_x0 = ppx(PAGE_W - 30 * mm)
+        date_box_x1 = ppx(PAGE_W - 10 * mm)
+        date_box_y0 = ppy(175 * mm)
+        date_box_y1 = date_box_y0 + smm(10)
+        # cv.create_rectangle(date_box_x0, date_box_y0, date_box_x1, date_box_y1, outline="#555", width=1)
+        cv.create_text(date_box_x0 + smm(1.5), date_box_y0 + smm(2), anchor="nw", text="Date :", font=("Helvetica", max(8, smm(3))))
+
+        #-------------Doctor's Notes--------------------------------------
+        note_divider_x = ppx(60 * mm)
+        note_width = ppx(PAGE_W - 5 * mm) - note_divider_x
+        note_height = smm(5)
+        note_y = ppy(70 * mm)
+        cv.create_rectangle(note_divider_x, note_y, note_divider_x + note_width, note_y + note_height,
+                            outline="#555", width=1)
+        cv.create_text(note_divider_x + note_width / 2, note_y + note_height / 2,
+                       text="Doctor's Notes", font=("Helvetica", max(7, smm(3))), fill="#000")
 
         # Divider + writing-area box
         div_x = marg_px + smm(55)
@@ -631,7 +655,7 @@ class Letter:
 
         # Left column: Consultants / Visiting doctors
         lx  = marg_px + smm(3)
-        ly  = rule_y + smm(8)
+        ly  = rule_y + smm(3)
         lh  = smm(4.6)
         lhs = smm(5.2)
 
@@ -639,23 +663,23 @@ class Letter:
                        font=("Arial", max(7, smm(3)), "bold"), fill="#1a1a1a", anchor="nw")
         ly += lhs
         for doc in CONSULTANTS:
-            cv.create_text(lx+smm(3), ly, text=doc["name"],
-                           font=("Arial", max(6, smm(2.5))), fill="#1a1a1a", anchor="nw"); ly += lh
-            cv.create_text(lx+smm(3), ly, text=doc["role"],
+            cv.create_text(lx+smm(3), ly, text=f"{doc["name"]},",
+                           font=("Arial", max(5, smm(2.5))), fill="#1a1a1a", anchor="nw"); ly += lh
+            cv.create_text(lx+smm(3), ly, text=f"{doc["role"]}",
                            font=("Arial", max(5, smm(2))), fill="#333",    anchor="nw"); ly += lh
-            cv.create_text(lx+smm(3), ly, text=doc["reg"],
+            cv.create_text(lx+smm(3), ly, text=f"{doc["reg"]}",
                            font=("Arial", max(5, smm(2))), fill="#555",    anchor="nw"); ly += lh + smm(1.5)
 
-        ly += smm(6)
+        ly += smm(2)
         cv.create_text(lx, ly, text="Visiting :",
                        font=("Arial", max(7, smm(3)), "bold"), fill="#1a1a1a", anchor="nw")
         ly += lhs
         for doc in VISITING_DOCTORS:
-            cv.create_text(lx+smm(3), ly, text=doc["name"],
-                           font=("Arial", max(6, smm(2.5))), fill="#1a1a1a", anchor="nw"); ly += lh
-            cv.create_text(lx+smm(3), ly, text=doc["role"],
+            cv.create_text(lx+smm(3), ly, text=f"{doc["name"]},",
+                           font=("Arial", max(5, smm(2.5))), fill="#1a1a1a", anchor="nw"); ly += lh
+            cv.create_text(lx+smm(3), ly, text=f"{doc["role"]}",
                            font=("Arial", max(5, smm(2))), fill="#333",    anchor="nw"); ly += lh
-            cv.create_text(lx+smm(3), ly, text=doc["reg"],
+            cv.create_text(lx+smm(3), ly, text=f"{doc["reg"]}",
                            font=("Arial", max(5, smm(2))), fill="#555",    anchor="nw"); ly += lh + smm(1.5)
 
         # Footer
@@ -696,6 +720,316 @@ class Letter:
 
         def _print_now():
             tmp = os.path.join(SCRIPT_DIR, "_plain_prescription_temp.pdf")
+            try:
+                generate_pdf(tmp)
+                _open_pdf(tmp)
+            except Exception as exc:
+                messagebox.showerror("Error", f"Could not open PDF:\n{exc}")
+
+        tk.Button(btn_bar, text="📄  Generate PDF", font=("Arial", 11), width=16,
+                  bg="#1565C0", fg="white", command=_generate_pdf).grid(row=0, column=0, padx=8)
+        tk.Button(btn_bar, text="🖨  Open / Print", font=("Arial", 11), width=16,
+                  bg="#2E7D32", fg="white", command=_print_now).grid(row=0, column=1, padx=8)
+        tk.Button(btn_bar, text="Close",            font=("Arial", 11), width=10,
+                  command=self.close).grid(row=0, column=2, padx=8)
+    def todayapp(self):
+        try:
+            from reportlab.lib.pagesizes import A4
+            from reportlab.lib.units import mm as rl_mm
+            from reportlab.pdfgen import canvas as rl_canvas
+            from reportlab.lib.colors import HexColor
+            from reportlab.lib.utils import ImageReader
+            reportlab_ok = True
+            PAGE_W, PAGE_H = A4          # points  (595 × 842)
+            mm = rl_mm
+        except ImportError:
+            reportlab_ok = False
+            PAGE_W, PAGE_H = 595.0, 842.0
+            rl_mm = 2.8346
+            mm = 2.8346
+            HexColor = None
+            ImageReader = None
+            rl_canvas = None
+
+        # ── Paths & clinic data ──────────────────────────────────────────
+        SCRIPT_DIR     = os.path.dirname(os.path.abspath(__file__))
+        LOGO_PATH      = os.path.join(SCRIPT_DIR, "Dental_logo.png")
+        CLINIC_NAME    = "ANUPAM DENTAL CLINIC"
+        CLINIC_ADDRESS = "West Gate Vaikom - 686141"
+        CLINIC_PHONE   = "Clinic : 9446046868"
+        CLINIC_RESI    = "Resi   : 216858"
+        CLINIC_HOURS   = "Clinic Hours : 10:00 AM to 07:00 PM,  Tuesday Holiday"
+
+        # ==============================================================
+        # PDF generation (ReportLab)
+        # ==============================================================
+        def draw_logo(c, cx: float, cy: float, r: float):
+            if os.path.isfile(LOGO_PATH) and ImageReader:
+                img = ImageReader(LOGO_PATH)
+                iw, ih = img.getSize()
+                box = 2 * r
+                scale = min(box / iw, box / ih)
+                w, h = iw * scale, ih * scale
+                c.drawImage(img, cx - w / 2, cy - h / 2, width=w, height=h, mask="auto", preserveAspectRatio=True)
+                return
+            
+            # Fallback
+            c.saveState()
+            c.setDash(1, 2)
+            c.setLineWidth(1)
+            c.circle(cx, cy, r, stroke=1, fill=0)
+            c.circle(cx, cy, r - 2 * rl_mm, stroke=1, fill=0)
+            c.restoreState()
+            c.saveState()
+            c.translate(cx, cy)
+            c.rotate(90)
+            c.setFont("Helvetica-Bold", 5.5)
+            c.drawCentredString(0, r - 5 * rl_mm, "ANUPAM")
+            c.restoreState()
+            c.setFont("Helvetica", 4.5)
+            c.drawCentredString(cx, cy - 1.5 * rl_mm, "DENTAL")
+            c.drawCentredString(cx, cy - 4.5 * rl_mm, "CLINIC")
+
+        def draw_header(c: canvas.Canvas) -> float:
+            """Draws the logo + clinic name/address/phone block and the rule
+            beneath it. Returns the y coordinate of that rule (top_line_y)."""
+            INK = HexColor("#1a1a1a")
+            c.setFillColor(INK)
+            c.setStrokeColor(INK)
+
+            logo_cx, logo_cy, logo_r = 24 * mm, PAGE_H - 24 * mm, 13 * mm
+            draw_logo(c, logo_cx, logo_cy, logo_r)
+
+            header_cx = PAGE_W / 2 + 8 * mm
+
+            c.setFont("Times-Bold", 24)
+            c.drawCentredString(header_cx, PAGE_H - 20 * mm, CLINIC_NAME)
+
+            c.setFont("Helvetica", 9)
+            c.drawCentredString(header_cx, PAGE_H - 27 * mm, CLINIC_ADDRESS)
+
+            right_x = PAGE_W - 18 * mm
+            c.setFont("Helvetica", 9.5)
+            c.drawRightString(right_x, PAGE_H - 33 * mm, CLINIC_PHONE)
+            c.drawRightString(right_x, PAGE_H - 38 * mm, CLINIC_RESI)
+
+            top_line_y = PAGE_H - 41 * mm
+            c.setLineWidth(0.8)
+            c.line(15 * mm, top_line_y, PAGE_W - 15 * mm, top_line_y)
+
+            return top_line_y
+
+
+        # ----------------------------------------------------------------------
+        # Appointments table
+        # ----------------------------------------------------------------------
+        def draw_appointments(c: canvas.Canvas, top_line_y: float, doctor_name: str, appointments: list):
+            """Draws the 'Appointments' title, the Doctor field, and the
+            Time/PName/Purpose/Duration table below the header rule."""
+            INK = HexColor("#1a1a1a") if HexColor else None
+            if INK:
+                c.setFillColor(INK)
+                c.setStrokeColor(INK)
+            else:
+                c.setFillColorRGB(0.1, 0.1, 0.1)
+                c.setStrokeColorRGB(0.1, 0.1, 0.1)
+
+            left_margin = 15 * mm
+            right_margin = PAGE_W - 15 * mm
+
+            # ---------- section title ----------
+            y = top_line_y - 10 * mm
+            c.setFont("Helvetica-Bold", 13)
+            c.drawCentredString(PAGE_W / 2, y, "Appointments")
+
+            # ---------- Doctor field ----------
+            y -= 10 * mm
+            c.setFont("Helvetica-Bold", 9.5)
+            c.drawString(left_margin, y + 1.5 * mm, "Doctor :")
+
+            box_x0 = left_margin + 20 * mm
+            box_x1 = left_margin + 95 * mm
+            box_h = 6 * mm
+            c.setLineWidth(0.6)
+            c.rect(box_x0, y - 1 * mm, box_x1 - box_x0, box_h, stroke=1, fill=0)
+            c.setFont("Helvetica", 9.5)
+            c.drawString(box_x0 + 2 * mm, y + 1 * mm, doctor_name)
+
+            # ---------- table column boundaries ----------
+            col_time = (left_margin, left_margin + 27 * mm)
+            col_name = (col_time[1], col_time[1] + 38 * mm)
+            col_purpose = (col_name[1], col_name[1] + 78 * mm)
+            col_duration = (col_purpose[1], right_margin)
+            cols = [col_time, col_name, col_purpose, col_duration]
+            headers = ["Time", "PName", "Purpose", "Duration"]
+
+            table_top = y - 8 * mm
+            header_h = 7 * mm
+            row_h = 7 * mm
+
+            # ---------- header row ----------
+            c.setLineWidth(0.7)
+            c.rect(left_margin, table_top - header_h, right_margin - left_margin, header_h, stroke=1, fill=0)
+            for (x0, x1) in cols[:-1]:
+                c.line(x1, table_top, x1, table_top - header_h)
+            c.setFont("Helvetica-Bold", 9.5)
+            for (x0, x1), label in zip(cols, headers):
+                c.drawString(x0 + 2 * mm, table_top - header_h + 2 * mm, label)
+
+            # ---------- data rows ----------
+            c.setFont("Helvetica", 9)
+            row_y = table_top - header_h
+            for time_s, name_s, purpose_s, duration_s in appointments:
+                c.setLineWidth(0.5)
+                c.rect(left_margin, row_y - row_h, right_margin - left_margin, row_h, stroke=1, fill=0)
+                for (x0, x1) in cols[:-1]:
+                    c.line(x1, row_y, x1, row_y - row_h)
+
+                text_y = row_y - row_h + 2 * mm
+                c.drawString(col_time[0] + 2 * mm, text_y, time_s)
+                c.drawString(col_name[0] + 2 * mm, text_y, name_s)
+                c.drawString(col_purpose[0] + 2 * mm, text_y, purpose_s)
+                c.drawRightString(col_duration[1] - 2 * mm, text_y, duration_s)
+
+                row_y -= row_h
+
+            return row_y  # bottom of the table, if the caller needs it
+
+
+        # ----------------------------------------------------------------------
+        # Footer
+        # ----------------------------------------------------------------------
+        def draw_footer(c: canvas.Canvas):
+            INK = HexColor("#1a1a1a") if HexColor else None
+            if INK:
+                c.setFillColor(INK)
+            else:
+                c.setFillColorRGB(0.1, 0.1, 0.1)
+            c.setFont("Helvetica", 8.5)
+            c.drawCentredString(PAGE_W / 2 + 8 * mm, 14 * mm, CLINIC_HOURS)
+
+        def generate_pdf(filepath: str):
+            if not rl_canvas: return
+            c = rl_canvas.Canvas(filepath, pagesize=(PAGE_W, PAGE_H))
+            draw_header(c)
+            c.showPage()
+            c.save()
+
+        # ==============================================================
+        # Build Tkinter workspace
+        # ==============================================================
+        self.app.clear_workspace()
+        self.app.workspace = tk.Frame(self.app.root, bd=3, relief="solid")
+        self.app.workspace.pack(padx=10, pady=10, fill="both", expand=True)
+        ws = self.app.workspace
+
+        AVAIL_H = 500
+        AVAIL_W = 500
+        SCALE   = min(AVAIL_H / PAGE_H, AVAIL_W / PAGE_W)
+        CW      = int(PAGE_W * SCALE)
+        CH      = int(PAGE_H * SCALE)
+        mm_px   = SCALE * 2.8346
+
+        outer = tk.Frame(ws, bg="#c0c0c0")
+        outer.pack(fill="both", expand=True, padx=10, pady=(6, 0))
+
+        vsb = tk.Scrollbar(outer, orient="vertical")
+        vsb.pack(side="right", fill="y")
+        hsb = tk.Scrollbar(outer, orient="horizontal")
+        hsb.pack(side="bottom", fill="x")
+
+        cv = tk.Canvas(outer, bg="#c0c0c0", width=CW+10, height=CH+1,
+                       scrollregion=(0, 0, CW + 20, CH + 20),
+                       yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+        cv.pack(fill="both", expand=True)
+        vsb.config(command=cv.yview)
+        hsb.config(command=cv.xview)
+
+        canvas_width = CW + 950      # Same as the Canvas width
+        OX = (canvas_width - CW) // 2
+        OY = 10
+        cv.create_rectangle(OX+4, OY+4, OX+CW+4, OY+CH+4, fill="#888888", outline="")
+        cv.create_rectangle(OX, OY, OX+CW, OY+CH, fill="white", outline="#aaaaaa", width=1)
+
+        def ppx(pt):  return OX + int(pt * SCALE)
+        def ppy(pt):  return OY + int((PAGE_H - pt) * SCALE)
+        def pcx():    return OX + CW // 2
+        def smm(v):   return int(v * mm_px)
+
+        logo_cx = ppx(30*rl_mm)
+        logo_cy = ppy(PAGE_H - 20*rl_mm)
+        logo_r  = smm(15)
+        if os.path.isfile(LOGO_PATH):
+            try:
+                from PIL import Image as _PI, ImageTk as _ITk
+                _img = _PI.open(LOGO_PATH)
+                _img.thumbnail((logo_r*2, logo_r*2))
+                self._lp_logo = _ITk.PhotoImage(_img)
+                cv.create_image(logo_cx, logo_cy, image=self._lp_logo)
+            except Exception:
+                cv.create_oval(logo_cx-logo_r, logo_cy-logo_r,
+                               logo_cx+logo_r, logo_cy+logo_r, outline="#555")
+        else:
+            cv.create_oval(logo_cx-logo_r, logo_cy-logo_r,
+                           logo_cx+logo_r, logo_cy+logo_r, outline="#555")
+
+        cv.create_text(pcx(), ppy(PAGE_H - 15*rl_mm), text=CLINIC_NAME,
+                       font=("Times New Roman", max(10, smm(6)), "bold"), fill="#1a1a1a")
+        cv.create_text(pcx(), ppy(PAGE_H - 22*rl_mm), text=CLINIC_ADDRESS,
+                       font=("Arial", max(8, smm(3))), fill="#333")
+        cv.create_text(ppx(PAGE_W - 28*rl_mm), ppy(PAGE_H - 30*rl_mm),text=f"{CLINIC_PHONE}",
+                       font=("Arial", max(8, smm(3))), fill="#333")
+        cv.create_text(ppx(PAGE_W - 32*rl_mm), ppy(PAGE_H - 37*rl_mm),text=f"{CLINIC_RESI}",
+                       font=("Arial", max(8, smm(3))), fill="#333")
+
+        rule_y   = ppy(PAGE_H - 47*rl_mm)
+        marg_px  = ppx(10*rl_mm)
+        right_px = OX + CW - smm(2)
+        cv.create_line(marg_px, rule_y, right_px, rule_y, fill="#333", width=1)
+
+
+        cv.create_text(pcx(), ppy(6*rl_mm), text=CLINIC_HOURS,
+                       font=("Arial", max(6, smm(2.5))), fill="#555")
+
+        btn_bar = tk.Frame(ws)
+        btn_bar.pack(pady=8)
+
+        def _open_pdf(path):
+            try:
+                if hasattr(os, "startfile"):
+                    os.startfile(path)
+                elif sys.platform.startswith("linux"):
+                    subprocess.Popen(["xdg-open", path])
+                elif sys.platform == "darwin":
+                    subprocess.Popen(["open", path])
+                else:
+                    subprocess.Popen(["cmd", "/c", "start", "", path])
+            except Exception as exc:
+                messagebox.showwarning("Open PDF", f"Could not open the PDF automatically.\n{exc}")
+
+        def _generate_pdf():
+            if not reportlab_ok:
+                messagebox.showerror("Missing Library",
+                    "ReportLab is required.\nRun:  pip install reportlab")
+                return
+            filepath = filedialog.asksaveasfilename(
+                defaultextension=".pdf", initialfile="Anupam_Dental_Letterhead.pdf",
+                initialdir=SCRIPT_DIR, filetypes=[("PDF files", "*.pdf")],
+                title="Save Letterhead PDF As")
+            if not filepath: return
+            try:
+                generate_pdf(filepath)
+                messagebox.showinfo("Done", f"Letterhead saved:\n{filepath}")
+                _open_pdf(filepath)
+            except Exception as exc:
+                messagebox.showerror("Error", f"PDF generation failed:\n{exc}")
+
+        def _print_now():
+            if not reportlab_ok:
+                messagebox.showerror("Missing Library",
+                    "ReportLab is required.\nRun:  pip install reportlab")
+                return
+            tmp = os.path.join(SCRIPT_DIR, "_letterhead_temp.pdf")
             try:
                 generate_pdf(tmp)
                 _open_pdf(tmp)

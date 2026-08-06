@@ -91,7 +91,7 @@ class Registration:
 
     def todayapp(self):
         Letter(self.app, mode="form")
-
+        
     def registration_workspace(self):
         # Initialize patient_data dictionary
         self.patient_data = {
@@ -130,7 +130,26 @@ class Registration:
         Doctor_name = tk.Label(reg, text="Doctor Name:", font=('Arial', 8))
         Doctor_name.grid(row=0, column=0, padx=(20, 5), pady=10, sticky='e')
         self.Doctor_var = tk.StringVar()
-        self.Doctor_combo = ttk.Combobox(reg, textvariable=self.Doctor_var, values=["Dr. Anoop", "Dr. Terry"], state="readonly", font=('Arial', 8), width=15)
+        
+        # Fetch doctor names from the database
+        doctor_names = []
+        try:
+            conn = get_db_connection(self.app)
+            cursor = conn.cursor()
+            cursor.execute("SELECT First_Name, Last_Name FROM Doctors")
+            for row in cursor.fetchall():
+                fname = (row[0] or "").strip()
+                lname = (row[1] or "").strip()
+                full_name = f"{fname} {lname}".strip()
+                if full_name:
+                    if not full_name.lower().startswith("dr.") and not full_name.lower().startswith("dr "):
+                        full_name = f"Dr. {full_name}"
+                    doctor_names.append(full_name)
+            conn.close()
+        except Exception as e:
+            print(f"Error loading doctors: {e}")
+            
+        self.Doctor_combo = ttk.Combobox(reg, textvariable=self.Doctor_var, values=doctor_names, state="readonly", font=('Arial', 8), width=15)
         self.Doctor_combo.grid(row=0, column=1, padx=(0, 20), pady=10, sticky='w')
 
         # --- Row 1: Patient Details ---

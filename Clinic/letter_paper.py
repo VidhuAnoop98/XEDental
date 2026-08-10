@@ -5,6 +5,8 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from datetime import datetime
 from tkcalendar import Calendar
+from docx import Document
+from docx.shared import Mm, Pt
 import sqlite3
 import os
 import subprocess
@@ -174,12 +176,12 @@ class Letter:
         self.app.workspace.pack(padx=10, pady=10, fill="both", expand=True)
         ws = self.app.workspace
 
-        AVAIL_H = 600
+        AVAIL_H = 500
         AVAIL_W = 500
-        SCALE   = min(AVAIL_H / PAGE_H, AVAIL_W / PAGE_W)
-        CW      = int(PAGE_W * SCALE)
-        CH      = int(PAGE_H * SCALE)
-        mm_px   = SCALE * 2.8346
+        base_scale = min(AVAIL_H / PAGE_H, AVAIL_W / PAGE_W)
+        self.preview_scale = base_scale
+        CW      = int(PAGE_W * self.preview_scale)
+        CH      = int(PAGE_H * self.preview_scale)
 
         outer = tk.Frame(ws, bg="#c0c0c0")
         outer.pack(fill="both", expand=True, padx=10, pady=(6, 0))
@@ -195,84 +197,157 @@ class Letter:
         cv.pack(fill="both", expand=True)
         vsb.config(command=cv.yview)
         hsb.config(command=cv.xview)
+        
+        state = {
+            "current_page": 0,
+            "pages": [0]
+        }
 
-        canvas_width = CW + 950      # Same as the Canvas width
-        OX = (canvas_width - CW) // 2
-        OY = 10
-        cv.create_rectangle(OX+4, OY+4, OX+CW+4, OY+CH+4, fill="#888888", outline="")
-        cv.create_rectangle(OX, OY, OX+CW, OY+CH, fill="white", outline="#aaaaaa", width=1)
+        # Preview Controls (Zoom & Navigation)
+        ctrl_frame = tk.Frame(ws)
+        ctrl_frame.pack(fill="x", pady=4)
 
-        def ppx(pt):  return OX + int(pt * SCALE)
-        def ppy(pt):  return OY + int((PAGE_H - pt) * SCALE)
-        def pcx():    return OX + CW // 2
-        def smm(v):   return int(v * mm_px)
+        def prev_page():
+            if state["current_page"] > 0:
+                draw_page_preview(state["current_page"] - 1)
 
-        logo_cx = ppx(30*rl_mm)
-        logo_cy = ppy(PAGE_H - 20*rl_mm)
-        logo_r  = smm(15)
-        if os.path.isfile(LOGO_PATH):
-            try:
-                from PIL import Image as _PI, ImageTk as _ITk
-                _img = _PI.open(LOGO_PATH)
-                _img.thumbnail((logo_r*2, logo_r*2))
-                self._lp_logo = _ITk.PhotoImage(_img)
-                cv.create_image(logo_cx, logo_cy, image=self._lp_logo)
-            except Exception:
+        def next_page():
+            if state["current_page"] < len(state["pages"]) - 1:
+                draw_page_preview(state["current_page"] + 1)
+
+        btn_prev = tk.Button(ctrl_frame, text=" ◀", font=("Arial", 9, "bold"), command=prev_page)
+        btn_prev.pack(side="left", padx=5)
+
+        page_lbl = tk.Label(ctrl_frame, text="Page 1 of 1", font=("Arial", 10, "bold"), bg="white")
+        page_lbl.pack(side="left", padx=5)
+
+        btn_next = tk.Button(ctrl_frame, text=" ▶", font=("Arial", 9, "bold"), command=next_page)
+        btn_next.pack(side="left", padx=5)
+
+        def zoom_in():
+            if self.preview_scale < 2.0:
+                self.preview_scale = round(min(2.0, self.preview_scale + 0.1), 1)
+                draw_page_preview(state["current_page"])
+
+        def zoom_out():
+            if self.preview_scale > 0.25:
+                self.preview_scale = round(max(0.25, self.preview_scale - 0.1), 1)
+                draw_page_preview(state["current_page"])
+
+        def on_mouse_wheel(event):
+            if getattr(event, "delta", 0) > 0 or getattr(event, "num", 0) == 4:
+                zoom_in()
+            else:
+                zoom_out()
+            return "break"
+
+        cv.bind("<MouseWheel>", on_mouse_wheel)
+        cv.bind("<Button-4>", on_mouse_wheel)
+        cv.bind("<Button-5>", on_mouse_wheel)
+
+        btn_zoom_out = tk.Button(ctrl_frame, text="-", font=("Arial", 9, "bold"), command=zoom_out)
+        btn_zoom_out.pack(side="left", padx=5)
+
+        zoom_lbl = tk.Label(ctrl_frame, text="100%", font=("Arial", 10), bg="white")
+        zoom_lbl.pack(side="left", padx=5)
+
+        btn_zoom_in = tk.Button(ctrl_frame, text="+", font=("Arial", 9, "bold"), command=zoom_in)
+        btn_zoom_in.pack(side="left", padx=5)
+
+        def draw_page_preview(page_idx):
+            state["current_page"] = page_idx
+            cv.delete("all")
+            
+            scale = self.preview_scale
+            w_scaled = int(PAGE_W * scale)
+            h_scaled = int(PAGE_H * scale)
+            mm_px = scale * 2.8346
+            
+            cv.config(scrollregion=(0, 0, w_scaled + 20, h_scaled + 20))
+            
+            canvas_width = w_scaled + 950
+            OX = (canvas_width - w_scaled) // 2
+            OY = 10
+            
+            cv.create_rectangle(OX+4, OY+4, OX+w_scaled+4, OY+h_scaled+4, fill="#888888", outline="")
+            cv.create_rectangle(OX, OY, OX+w_scaled, OY+h_scaled, fill="white", outline="#aaaaaa", width=1)
+
+            def ppx(pt):  return OX + int(pt * scale)
+            def ppy(pt):  return OY + int((PAGE_H - pt) * scale)
+            def pcx():    return OX + w_scaled // 2
+            def smm(v):   return int(v * mm_px)
+
+            page_lbl.config(text=f"Page {page_idx + 1} of {len(state['pages'])}")
+            zoom_lbl.config(text=f"{int(scale / base_scale * 100)}%")
+
+            logo_cx = ppx(30*rl_mm)
+            logo_cy = ppy(PAGE_H - 20*rl_mm)
+            logo_r  = smm(15)
+            if os.path.isfile(LOGO_PATH):
+                try:
+                    from PIL import Image as _PI, ImageTk as _ITk
+                    _img = _PI.open(LOGO_PATH)
+                    _img.thumbnail((logo_r*2, logo_r*2))
+                    self._lp_logo = _ITk.PhotoImage(_img)
+                    cv.create_image(logo_cx, logo_cy, image=self._lp_logo)
+                except Exception:
+                    cv.create_oval(logo_cx-logo_r, logo_cy-logo_r,
+                                   logo_cx+logo_r, logo_cy+logo_r, outline="#555")
+            else:
                 cv.create_oval(logo_cx-logo_r, logo_cy-logo_r,
                                logo_cx+logo_r, logo_cy+logo_r, outline="#555")
-        else:
-            cv.create_oval(logo_cx-logo_r, logo_cy-logo_r,
-                           logo_cx+logo_r, logo_cy+logo_r, outline="#555")
 
-        cv.create_text(pcx(), ppy(PAGE_H - 15*rl_mm), text=CLINIC_NAME,
-                       font=("Times New Roman", max(10, smm(6)), "bold"), fill="#1a1a1a")
-        cv.create_text(pcx(), ppy(PAGE_H - 22*rl_mm), text=CLINIC_ADDRESS,
-                       font=("Arial", max(8, smm(3))), fill="#333")
-        cv.create_text(ppx(PAGE_W - 28*rl_mm), ppy(PAGE_H - 30*rl_mm),text=f"{CLINIC_PHONE}",
-                       font=("Arial", max(8, smm(3))), fill="#333")
-        cv.create_text(ppx(PAGE_W - 32*rl_mm), ppy(PAGE_H - 37*rl_mm),text=f"{CLINIC_RESI}",
-                       font=("Arial", max(8, smm(3))), fill="#333")
+            cv.create_text(pcx(), ppy(PAGE_H - 15*rl_mm), text=CLINIC_NAME,
+                           font=("Times New Roman", max(10, smm(6)), "bold"), fill="#1a1a1a")
+            cv.create_text(pcx(), ppy(PAGE_H - 22*rl_mm), text=CLINIC_ADDRESS,
+                           font=("Arial", max(8, smm(3))), fill="#333")
+            cv.create_text(ppx(PAGE_W - 28*rl_mm), ppy(PAGE_H - 30*rl_mm),text=f"{CLINIC_PHONE}",
+                           font=("Arial", max(8, smm(3))), fill="#333")
+            cv.create_text(ppx(PAGE_W - 32*rl_mm), ppy(PAGE_H - 37*rl_mm),text=f"{CLINIC_RESI}",
+                           font=("Arial", max(8, smm(3))), fill="#333")
 
-        rule_y   = ppy(PAGE_H - 47*rl_mm)
-        marg_px  = ppx(10*rl_mm)
-        right_px = OX + CW - smm(2)
-        cv.create_line(marg_px, rule_y, right_px, rule_y, fill="#333", width=1)
+            rule_y   = ppy(PAGE_H - 47*rl_mm)
+            marg_px  = ppx(10*rl_mm)
+            right_px = OX + w_scaled - smm(2)
+            cv.create_line(marg_px, rule_y, right_px, rule_y, fill="#333", width=1)
 
-        div_x = marg_px + smm(70)
-        bot_y = ppy(12*rl_mm)
-        cv.create_line(div_x, rule_y, div_x, bot_y, fill="#555", width=1)
-        cv.create_rectangle(div_x, rule_y, right_px, bot_y, outline="#555", width=1)
+            div_x = marg_px + smm(70)
+            bot_y = ppy(12*rl_mm)
+            cv.create_line(div_x, rule_y, div_x, bot_y, fill="#555", width=1)
+            cv.create_rectangle(div_x, rule_y, right_px, bot_y, outline="#555", width=1)
 
-        lx  = marg_px + smm(1)
-        ly  = rule_y + smm(8)
-        lh  = smm(4.6)
-        lhs = smm(5.2)
+            lx  = marg_px + smm(1)
+            ly  = rule_y + smm(8)
+            lh  = smm(4.6)
+            lhs = smm(5.2)
 
-        cv.create_text(lx, ly, text="Consultants :",
-                       font=("Arial", max(7, smm(3)), "bold"), fill="#1a1a1a", anchor="nw")
-        ly += lhs
-        for doc in CONSULTANTS:
-            cv.create_text(lx+smm(3), ly, text=doc["name"],
-                           font=("Arial", max(6, smm(2.5))), fill="#1a1a1a", anchor="nw"); ly += lh
-            cv.create_text(lx+smm(3), ly, text=doc["role"],
-                           font=("Arial", max(5, smm(2))), fill="#333",    anchor="nw"); ly += lh
-            cv.create_text(lx+smm(3), ly, text=doc["reg"],
-                           font=("Arial", max(5, smm(2))), fill="#555",    anchor="nw"); ly += lh + smm(1.5)
+            cv.create_text(lx, ly, text="Consultants :",
+                           font=("Arial", max(7, smm(3)), "bold"), fill="#1a1a1a", anchor="nw")
+            ly += lhs
+            for doc in CONSULTANTS:
+                cv.create_text(lx+smm(3), ly, text=doc["name"],
+                               font=("Arial", max(6, smm(2.5))), fill="#1a1a1a", anchor="nw"); ly += lh
+                cv.create_text(lx+smm(3), ly, text=doc["role"],
+                               font=("Arial", max(5, smm(2))), fill="#333",    anchor="nw"); ly += lh
+                cv.create_text(lx+smm(3), ly, text=doc["reg"],
+                               font=("Arial", max(5, smm(2))), fill="#555",    anchor="nw"); ly += lh + smm(1.5)
 
-        ly += smm(6)
-        cv.create_text(lx, ly, text="Visiting :",
-                       font=("Arial", max(7, smm(3)), "bold"), fill="#1a1a1a", anchor="nw")
-        ly += lhs
-        for doc in VISITING_DOCTORS:
-            cv.create_text(lx+smm(3), ly, text=doc["name"],
-                           font=("Arial", max(6, smm(2.5))), fill="#1a1a1a", anchor="nw"); ly += lh
-            cv.create_text(lx+smm(3), ly, text=doc["role"],
-                           font=("Arial", max(5, smm(2))), fill="#333",    anchor="nw"); ly += lh
-            cv.create_text(lx+smm(3), ly, text=doc["reg"],
-                           font=("Arial", max(5, smm(2))), fill="#555",    anchor="nw"); ly += lh + smm(1.5)
+            ly += smm(6)
+            cv.create_text(lx, ly, text="Visiting :",
+                           font=("Arial", max(7, smm(3)), "bold"), fill="#1a1a1a", anchor="nw")
+            ly += lhs
+            for doc in VISITING_DOCTORS:
+                cv.create_text(lx+smm(3), ly, text=doc["name"],
+                               font=("Arial", max(6, smm(2.5))), fill="#1a1a1a", anchor="nw"); ly += lh
+                cv.create_text(lx+smm(3), ly, text=doc["role"],
+                               font=("Arial", max(5, smm(2))), fill="#333",    anchor="nw"); ly += lh
+                cv.create_text(lx+smm(3), ly, text=doc["reg"],
+                               font=("Arial", max(5, smm(2))), fill="#555",    anchor="nw"); ly += lh + smm(1.5)
 
-        cv.create_text(pcx(), ppy(6*rl_mm), text=CLINIC_HOURS,
-                       font=("Arial", max(6, smm(2.5))), fill="#555")
+            cv.create_text(pcx(), ppy(6*rl_mm), text=CLINIC_HOURS,
+                           font=("Arial", max(6, smm(2.5))), fill="#555")
+
+        draw_page_preview(0)
 
         btn_bar = tk.Frame(ws)
         btn_bar.pack(pady=8)
@@ -318,18 +393,174 @@ class Letter:
                 _open_pdf(tmp)
             except Exception as exc:
                 messagebox.showerror("Error", f"Could not open PDF:\n{exc}")
+        
+        def _open_word(out_path, clinic_name, clinic_address, clinic_phone, clinic_resi, clinic_hours):
+            """Generate a .docx letterhead and open it."""
+            from docx import Document as _Doc
+            from docx.shared import Pt, Mm, RGBColor
+            from docx.enum.text import WD_ALIGN_PARAGRAPH
+            from docx.oxml.ns import qn
+            from docx.oxml import OxmlElement
+            import copy
+
+            doc = _Doc()
+
+            # ── Page margins ──────────────────────────────────────────────
+            section = doc.sections[0]
+            section.page_width  = Mm(210)
+            section.page_height = Mm(297)
+            section.top_margin    = Mm(10)
+            section.bottom_margin = Mm(12)
+            section.left_margin   = Mm(14)
+            section.right_margin  = Mm(14)
+
+            def add_centered(text, bold=False, size=11, color=None, space_after=0):
+                p = doc.add_paragraph()
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                p.paragraph_format.space_after  = Pt(space_after)
+                p.paragraph_format.space_before = Pt(0)
+                run = p.add_run(text)
+                run.bold = bold
+                run.font.size = Pt(size)
+                if color:
+                    run.font.color.rgb = RGBColor(*color)
+                return p
+
+            def add_left(text, bold=False, size=9, indent_mm=0, space_after=0):
+                p = doc.add_paragraph()
+                p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                p.paragraph_format.space_after  = Pt(space_after)
+                p.paragraph_format.space_before = Pt(0)
+                if indent_mm:
+                    p.paragraph_format.left_indent = Mm(indent_mm)
+                run = p.add_run(text)
+                run.bold = bold
+                run.font.size = Pt(size)
+                return p
+
+            def add_rule():
+                """Insert a thin horizontal border below the previous paragraph."""
+                p = doc.add_paragraph()
+                p.paragraph_format.space_after  = Pt(2)
+                p.paragraph_format.space_before = Pt(2)
+                pPr = p._p.get_or_add_pPr()
+                pBdr = OxmlElement('w:pBdr')
+                bottom = OxmlElement('w:bottom')
+                bottom.set(qn('w:val'),   'single')
+                bottom.set(qn('w:sz'),    '6')
+                bottom.set(qn('w:space'), '1')
+                bottom.set(qn('w:color'), '333333')
+                pBdr.append(bottom)
+                pPr.append(pBdr)
+
+            # ── Clinic header ─────────────────────────────────────────────
+            table = doc.add_table(rows=1, cols=3)
+            table.autofit = False
+            for cell in table.columns[0].cells: cell.width = Mm(40)
+            for cell in table.columns[1].cells: cell.width = Mm(102)
+            for cell in table.columns[2].cells: cell.width = Mm(440)
+            # for cell in table.columns[3].cells: cell.width = Mm(440)
+
+            # Logo in the left cell
+            cell_logo = table.cell(0, 0)
+            if os.path.isfile(LOGO_PATH):
+                p_logo = cell_logo.paragraphs[0]
+                p_logo.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                run = p_logo.add_run()
+                run.add_picture(LOGO_PATH, width=Mm(25))
+
+            # Clinic details in the middle cell
+            cell_mid = table.cell(0, 1)
+            def add_cell_centered(cell, text, bold=False, size=11, color=None, space_after=0, align=WD_ALIGN_PARAGRAPH.CENTER):
+                if len(cell.paragraphs) == 0:
+                    p = cell.add_paragraph()
+                else:
+                    p = cell.paragraphs[0]
+                p.alignment = align
+                p.paragraph_format.space_before = Pt(0)
+                p.paragraph_format.space_after = Pt(space_after)
+                run = p.add_run(text)
+                run.bold = bold
+                run.font.size = Pt(size)
+                if color:
+                    run.font.color.rgb = RGBColor(*color)
+
+            add_cell_centered(cell_mid, clinic_name,    bold=True,  size=18, space_after=2)
+            add_cell_centered(cell_mid, clinic_address, bold=False, size=10, space_after=1)
+            
+            # Clinic details in the right cell
+            cell_right = table.cell(0, 2)
+            add_cell_centered(cell_right, clinic_phone, bold=False, size=9, space_after=2, align=WD_ALIGN_PARAGRAPH.RIGHT)
+            add_cell_centered(cell_right, clinic_resi,  bold=False, size=9, space_after=2, align=WD_ALIGN_PARAGRAPH.RIGHT)
+
+            add_rule()  
+
+            # ── Consultants ───────────────────────────────────────────────
+            add_left("Consultants :", bold=True, size=9, space_after=2)
+            for doc_info in CONSULTANTS:
+                add_left(doc_info["name"], bold=False, size=8, indent_mm=5, space_after=0)
+                add_left(doc_info["role"], bold=False, size=7, indent_mm=5, space_after=0)
+                add_left(doc_info["reg"],  bold=False, size=7, indent_mm=5, space_after=3)
+
+            add_left("Visiting :", bold=True, size=9, space_after=2)
+            for doc_info in VISITING_DOCTORS:
+                add_left(doc_info["name"], bold=False, size=8, indent_mm=5, space_after=0)
+                add_left(doc_info["role"], bold=False, size=7, indent_mm=5, space_after=0)
+                add_left(doc_info["reg"],  bold=False, size=7, indent_mm=5, space_after=3)
+
+            add_rule()
+
+            # ── Footer ────────────────────────────────────────────────────
+            add_centered(clinic_hours, bold=False, size=8, space_after=0)
+
+            # ── Save & open ───────────────────────────────────────────────
+            doc.save(out_path)
+            try:
+                if hasattr(os, "startfile"):
+                    os.startfile(out_path)
+                elif sys.platform.startswith("linux"):
+                    subprocess.Popen(["xdg-open", out_path])
+                elif sys.platform == "darwin":
+                    subprocess.Popen(["open", out_path])
+                else:
+                    subprocess.Popen(["cmd", "/c", "start", "", out_path])
+            except Exception as exc:
+                messagebox.showwarning("Open Word", f"Could not open the document automatically.\n{exc}")
+
+        def _generate_word():
+            try:
+                from docx import Document as _check  # noqa – just verify installed
+            except ImportError:
+                messagebox.showerror("Missing Library",
+                    "python-docx is required.\nRun:  pip install python-docx")
+                return
+            filepath = filedialog.asksaveasfilename(
+                defaultextension=".docx",
+                initialfile="Anupam_Dental_Letterhead.docx",
+                initialdir=SCRIPT_DIR,
+                filetypes=[("Word Document", "*.docx")],
+                title="Save Letterhead Word Doc As")
+            if not filepath:
+                return
+            try:
+                _open_word(filepath, CLINIC_NAME, CLINIC_ADDRESS,
+                           CLINIC_PHONE, CLINIC_RESI, CLINIC_HOURS)
+                messagebox.showinfo("Done", f"Word document saved:\n{filepath}")
+            except PermissionError:
+                messagebox.showerror("Error", f"Word generation failed: Permission Denied.\n\nPlease close the file '{os.path.basename(filepath)}' in Microsoft Word (or any other program) and try again.")
+            except Exception as exc:
+                messagebox.showerror("Error", f"Word generation failed:\n{exc}")
 
         tk.Button(btn_bar, text="📄  Generate PDF", font=("Arial", 11), width=16,
                   bg="#1565C0", fg="white", command=_generate_pdf).grid(row=0, column=0, padx=8)
         tk.Button(btn_bar, text="🖨  Open / Print", font=("Arial", 11), width=16,
                   bg="#2E7D32", fg="white", command=_print_now).grid(row=0, column=1, padx=8)
+        tk.Button(btn_bar, text="📝  Word", font=("Arial", 11), width=12,
+                  bg="#6A1B9A", fg="white", command=_generate_word).grid(row=0, column=2, padx=8)
         tk.Button(btn_bar, text="Close",            font=("Arial", 11), width=10,
-                  command=self.close).grid(row=0, column=2, padx=8)
+                  command=self.close).grid(row=0, column=3, padx=8)
 
     def Plain_Priscription(self):
-        import os
-        import tkinter as tk
-        from tkinter import filedialog, messagebox
         
         from reportlab.lib.pagesizes import A4
         from reportlab.lib.units import mm
@@ -458,8 +689,8 @@ class Letter:
             draw_logo(c, logo_cx, logo_cy, logo_r)
         
             # ---------- Header text (stacked: title / address / phones) ----------
-            header_cx = PAGE_W * 0.60
-            header_cx1 = PAGE_W * 0.80
+            header_cx = PAGE_W * 0.60 
+            header_cx1 = PAGE_W * 0.85
         
             c.setFont("Times-Bold", 20)
             c.drawCentredString(header_cx, PAGE_H - 15 * mm, CLINIC_NAME)
@@ -561,12 +792,12 @@ class Letter:
         self.app.workspace.pack(padx=10, pady=10, fill="both", expand=True)
         ws = self.app.workspace
 
-        AVAIL_H = 600
+        AVAIL_H = 500
         AVAIL_W = 500
-        SCALE   = min(AVAIL_H / PAGE_H, AVAIL_W / PAGE_W)
-        CW      = int(PAGE_W * SCALE)
-        CH      = int(PAGE_H * SCALE)
-        mm_px   = SCALE * 2.8346
+        base_scale = min(AVAIL_H / PAGE_H, AVAIL_W / PAGE_W)
+        self.preview_scale = base_scale
+        CW      = int(PAGE_W * self.preview_scale)
+        CH      = int(PAGE_H * self.preview_scale)
 
         outer = tk.Frame(ws, bg="#c0c0c0")
         outer.pack(fill="both", expand=True, padx=10, pady=(6, 0))
@@ -583,108 +814,179 @@ class Letter:
         vsb.config(command=cv.yview)
         hsb.config(command=cv.xview)
 
-        canvas_width = CW + 950      # Same as the Canvas width logic in Letter_Pad
-        OX = (canvas_width - CW) // 2
-        OY = 10
-        cv.create_rectangle(OX+4, OY+4, OX+CW+4, OY+CH+4, fill="#888888", outline="")
-        cv.create_rectangle(OX, OY, OX+CW, OY+CH, fill="white", outline="#aaaaaa", width=1)
+        state = {
+            "current_page": 0,
+            "pages": [0]
+        }
 
-        def ppx(pt):  return OX + int(pt * SCALE)
-        def ppy(pt):  return OY + int((PAGE_H - pt) * SCALE)
-        def pcx():    return OX + CW // 2
-        def smm(v):   return int(v * mm_px)
+        # Preview Controls (Zoom & Navigation)
+        ctrl_frame = tk.Frame(ws)
+        ctrl_frame.pack(fill="x", pady=4)
 
-        # Draw the logo
-        logo_cx = ppx(20*mm)
-        logo_cy = ppy(PAGE_H - 16*mm)
-        logo_r  = smm(9)
-        if os.path.isfile(LOGO_PATH):
-            try:
-                from PIL import Image as _PI, ImageTk as _ITk
-                _img = _PI.open(LOGO_PATH)
-                _img.thumbnail((logo_r*2, logo_r*2))
-                self._lp_logo = _ITk.PhotoImage(_img)
-                cv.create_image(logo_cx, logo_cy, image=self._lp_logo)
-            except Exception:
+        def prev_page():
+            if state["current_page"] > 0:
+                draw_page_preview(state["current_page"] - 1)
+
+        def next_page():
+            if state["current_page"] < len(state["pages"]) - 1:
+                draw_page_preview(state["current_page"] + 1)
+
+        btn_prev = tk.Button(ctrl_frame, text=" ◀", font=("Arial", 9, "bold"), command=prev_page)
+        btn_prev.pack(side="left", padx=5)
+
+        page_lbl = tk.Label(ctrl_frame, text="Page 1 of 1", font=("Arial", 10, "bold"), bg="white")
+        page_lbl.pack(side="left", padx=5)
+
+        btn_next = tk.Button(ctrl_frame, text=" ▶", font=("Arial", 9, "bold"), command=next_page)
+        btn_next.pack(side="left", padx=5)
+
+        def zoom_in():
+            if self.preview_scale < 2.0:
+                self.preview_scale = round(min(2.0, self.preview_scale + 0.1), 1)
+                draw_page_preview(state["current_page"])
+
+        def zoom_out():
+            if self.preview_scale > 0.25:
+                self.preview_scale = round(max(0.25, self.preview_scale - 0.1), 1)
+                draw_page_preview(state["current_page"])
+
+        def on_mouse_wheel(event):
+            if getattr(event, "delta", 0) > 0 or getattr(event, "num", 0) == 4:
+                zoom_in()
+            else:
+                zoom_out()
+            return "break"
+
+        cv.bind("<MouseWheel>", on_mouse_wheel)
+        cv.bind("<Button-4>", on_mouse_wheel)
+        cv.bind("<Button-5>", on_mouse_wheel)
+
+        btn_zoom_out = tk.Button(ctrl_frame, text="-", font=("Arial", 9, "bold"), command=zoom_out)
+        btn_zoom_out.pack(side="left", padx=5)
+
+        zoom_lbl = tk.Label(ctrl_frame, text="100%", font=("Arial", 10), bg="white")
+        zoom_lbl.pack(side="left", padx=5)
+
+        btn_zoom_in = tk.Button(ctrl_frame, text="+", font=("Arial", 9, "bold"), command=zoom_in)
+        btn_zoom_in.pack(side="left", padx=5)
+
+        def draw_page_preview(page_idx):
+            state["current_page"] = page_idx
+            cv.delete("all")
+            
+            scale = self.preview_scale
+            w_scaled = int(PAGE_W * scale)
+            h_scaled = int(PAGE_H * scale)
+            mm_px = scale * 2.8346
+            
+            cv.config(scrollregion=(0, 0, w_scaled + 20, h_scaled + 20))
+            
+            canvas_width = w_scaled + 950
+            OX = (canvas_width - w_scaled) // 2
+            OY = 10
+            
+            cv.create_rectangle(OX+4, OY+4, OX+w_scaled+4, OY+h_scaled+4, fill="#888888", outline="")
+            cv.create_rectangle(OX, OY, OX+w_scaled, OY+h_scaled, fill="white", outline="#aaaaaa", width=1)
+
+            def ppx(pt):  return OX + int(pt * scale)
+            def ppy(pt):  return OY + int((PAGE_H - pt) * scale)
+            def pcx():    return OX + w_scaled // 2
+            def smm(v):   return int(v * mm_px)
+
+            page_lbl.config(text=f"Page {page_idx + 1} of {len(state['pages'])}")
+            zoom_lbl.config(text=f"{int(scale / base_scale * 100)}%")
+
+            # Draw the logo
+            logo_cx = ppx(20*mm)
+            logo_cy = ppy(PAGE_H - 16*mm)
+            logo_r  = smm(9)
+            if os.path.isfile(LOGO_PATH):
+                try:
+                    from PIL import Image as _PI, ImageTk as _ITk
+                    _img = _PI.open(LOGO_PATH)
+                    _img.thumbnail((logo_r*2, logo_r*2))
+                    self._pp_logo = _ITk.PhotoImage(_img)
+                    cv.create_image(logo_cx, logo_cy, image=self._pp_logo)
+                except Exception:
+                    cv.create_oval(logo_cx-logo_r, logo_cy-logo_r,
+                                   logo_cx+logo_r, logo_cy+logo_r, outline="#555")
+            else:
                 cv.create_oval(logo_cx-logo_r, logo_cy-logo_r,
                                logo_cx+logo_r, logo_cy+logo_r, outline="#555")
-        else:
-            cv.create_oval(logo_cx-logo_r, logo_cy-logo_r,
-                           logo_cx+logo_r, logo_cy+logo_r, outline="#555")
 
-        # Header Text
-        cv.create_text(pcx() + 40, ppy(PAGE_H - 13*mm), text=CLINIC_NAME,
-                       font=("Times New Roman", max(10, smm(6)), "bold"), fill="#1a1a1a")
-        cv.create_text(pcx() + 20, ppy(PAGE_H - 20*mm), text=CLINIC_ADDRESS,
-                       font=("Arial", max(8, smm(3))), fill="#333")
-        cv.create_text(pcx() + 140, ppy(PAGE_H - 27*mm), text=CLINIC_PHONE,
-                       font=("Arial", max(8, smm(3))), fill="#333")
-        cv.create_text(pcx() + 130, ppy(PAGE_H - 32*mm), text=CLINIC_RESI,
-                       font=("Arial", max(8, smm(3))), fill="#333")
+            # Header Text
+            cv.create_text(pcx() + 40, ppy(PAGE_H - 13*mm), text=CLINIC_NAME,
+                           font=("Times New Roman", max(10, smm(6)), "bold"), fill="#1a1a1a")
+            cv.create_text(pcx() + 20, ppy(PAGE_H - 20*mm), text=CLINIC_ADDRESS,
+                           font=("Arial", max(8, smm(3))), fill="#333")
+            cv.create_text(pcx() + 140, ppy(PAGE_H - 27*mm), text=CLINIC_PHONE,
+                           font=("Arial", max(8, smm(3))), fill="#333")
+            cv.create_text(pcx() + 130, ppy(PAGE_H - 32*mm), text=CLINIC_RESI,
+                           font=("Arial", max(8, smm(3))), fill="#333")
 
-        # Horizontal rule under header
-        rule_y   = ppy(PAGE_H - 37*mm)
-        marg_px  = ppx(1*mm)
-        right_px = ppx(PAGE_W - 1*mm)
-        cv.create_line(marg_px, rule_y, right_px, rule_y, fill="#333", width=1)
-        cv.create_line(marg_px + 80 , rule_y + 460, right_px, rule_y + 460, fill="#333", width=1)
-        
-        #-------------Date & Time--------------------------------------
-        date_box_x0 = ppx(PAGE_W - 30 * mm)
-        date_box_x1 = ppx(PAGE_W - 10 * mm)
-        date_box_y0 = ppy(175 * mm)
-        date_box_y1 = date_box_y0 + smm(10)
-        # cv.create_rectangle(date_box_x0, date_box_y0, date_box_x1, date_box_y1, outline="#555", width=1)
-        cv.create_text(date_box_x0 + smm(1.5), date_box_y0 + smm(2), anchor="nw", text="Date :", font=("Helvetica", max(8, smm(3))))
+            # Horizontal rule under header
+            rule_y   = ppy(PAGE_H - 37*mm)
+            marg_px  = ppx(1*mm)
+            right_px = ppx(PAGE_W - 1*mm)
+            cv.create_line(marg_px, rule_y, right_px, rule_y, fill="#333", width=1)
+            cv.create_line(ppx(1*mm + 80), ppy(PAGE_H - 32*mm - 470), ppx(PAGE_W - 1*mm), ppy(PAGE_H - 32*mm - 470), fill="#333", width=1)
+            
+            #-------------Date & Time--------------------------------------
+            date_box_x0 = ppx(PAGE_W - 30 * mm)
+            date_box_y0 = ppy(175 * mm)
+            # label inside box (top-left)
+            cv.create_text(date_box_x0 + smm(1.5), date_box_y0 + smm(2), anchor="nw", text="Date :", font=("Helvetica", max(8, smm(3))))
 
-        #-------------Doctor's Notes--------------------------------------
-        note_divider_x = ppx(60 * mm)
-        note_width = ppx(PAGE_W - 5 * mm) - note_divider_x
-        note_height = smm(5)
-        note_y = ppy(70 * mm)
-        cv.create_rectangle(note_divider_x, note_y, note_divider_x + note_width, note_y + note_height,
-                            outline="#555", width=1)
-        cv.create_text(note_divider_x + note_width / 2, note_y + note_height / 2,
-                       text="Doctor's Notes", font=("Helvetica", max(7, smm(3))), fill="#000")
+            #-------------Doctor's Notes--------------------------------------
+            note_divider_x = ppx(60 * mm)
+            note_width = ppx(PAGE_W - 5 * mm) - note_divider_x
+            note_height = smm(5)
+            note_y = ppy(70 * mm)
+            cv.create_rectangle(note_divider_x, note_y, note_divider_x + note_width, note_y + note_height,
+                                outline="#555", width=1)
+            cv.create_text(note_divider_x + note_width / 2, note_y + note_height / 2,
+                           text="Doctor's Notes", font=("Helvetica", max(7, smm(3))), fill="#000")
 
-        # Divider + writing-area box
-        div_x = marg_px + smm(55)
-        bot_y = ppy(12*mm)
-        cv.create_line(div_x, rule_y, div_x, bot_y, fill="#555", width=1)
-        cv.create_rectangle(div_x, rule_y, right_px, bot_y, outline="#555", width=1)
+            # Divider + writing-area box
+            div_x = marg_px + smm(55)
+            bot_y = ppy(12*mm)
+            cv.create_line(div_x, rule_y, div_x, bot_y, fill="#555", width=1)
+            cv.create_rectangle(div_x, rule_y, right_px, bot_y, outline="#555", width=1)
 
-        # Left column: Consultants / Visiting doctors
-        lx  = marg_px + smm(3)
-        ly  = rule_y + smm(3)
-        lh  = smm(4.6)
-        lhs = smm(5.2)
+            # Left column: Consultants / Visiting doctors
+            lx  = marg_px + smm(3)
+            ly  = rule_y + smm(3)
+            lh  = smm(4.6)
+            lhs = smm(5.2)
 
-        cv.create_text(lx, ly, text="Consultants :",
-                       font=("Arial", max(7, smm(3)), "bold"), fill="#1a1a1a", anchor="nw")
-        ly += lhs
-        for doc in CONSULTANTS:
-            cv.create_text(lx+smm(3), ly, text=f"{doc["name"]},",
-                           font=("Arial", max(5, smm(2.5))), fill="#1a1a1a", anchor="nw"); ly += lh
-            cv.create_text(lx+smm(3), ly, text=f"{doc["role"]}",
-                           font=("Arial", max(5, smm(2))), fill="#333",    anchor="nw"); ly += lh
-            cv.create_text(lx+smm(3), ly, text=f"{doc["reg"]}",
-                           font=("Arial", max(5, smm(2))), fill="#555",    anchor="nw"); ly += lh + smm(1.5)
+            cv.create_text(lx, ly, text="Consultants :",
+                           font=("Arial", max(7, smm(3)), "bold"), fill="#1a1a1a", anchor="nw")
+            ly += lhs
+            for doc in CONSULTANTS:
+                cv.create_text(lx+smm(3), ly, text=f"{doc['name']},",
+                               font=("Arial", max(5, smm(2.5))), fill="#1a1a1a", anchor="nw"); ly += lh
+                cv.create_text(lx+smm(3), ly, text=f"{doc['role']}",
+                               font=("Arial", max(5, smm(2))), fill="#333",    anchor="nw"); ly += lh
+                cv.create_text(lx+smm(3), ly, text=f"{doc['reg']}",
+                               font=("Arial", max(5, smm(2))), fill="#555",    anchor="nw"); ly += lh + smm(1.5)
 
-        ly += smm(2)
-        cv.create_text(lx, ly, text="Visiting :",
-                       font=("Arial", max(7, smm(3)), "bold"), fill="#1a1a1a", anchor="nw")
-        ly += lhs
-        for doc in VISITING_DOCTORS:
-            cv.create_text(lx+smm(3), ly, text=f"{doc["name"]},",
-                           font=("Arial", max(5, smm(2.5))), fill="#1a1a1a", anchor="nw"); ly += lh
-            cv.create_text(lx+smm(3), ly, text=f"{doc["role"]}",
-                           font=("Arial", max(5, smm(2))), fill="#333",    anchor="nw"); ly += lh
-            cv.create_text(lx+smm(3), ly, text=f"{doc["reg"]}",
-                           font=("Arial", max(5, smm(2))), fill="#555",    anchor="nw"); ly += lh + smm(1.5)
+            ly += smm(2)
+            cv.create_text(lx, ly, text="Visiting :",
+                           font=("Arial", max(7, smm(3)), "bold"), fill="#1a1a1a", anchor="nw")
+            ly += lhs
+            for doc in VISITING_DOCTORS:
+                cv.create_text(lx+smm(3), ly, text=f"{doc['name']},",
+                               font=("Arial", max(5, smm(2.5))), fill="#1a1a1a", anchor="nw"); ly += lh
+                cv.create_text(lx+smm(3), ly, text=f"{doc['role']}",
+                               font=("Arial", max(5, smm(2))), fill="#333",    anchor="nw"); ly += lh
+                cv.create_text(lx+smm(3), ly, text=f"{doc['reg']}",
+                               font=("Arial", max(5, smm(2))), fill="#555",    anchor="nw"); ly += lh + smm(1.5)
 
-        # Footer
-        cv.create_text(pcx(), ppy(6*mm), text=CLINIC_HOURS,
-                       font=("Arial", max(6, smm(2.5))), fill="#555")
+            # Footer
+            cv.create_text(pcx(), ppy(6*mm), text=CLINIC_HOURS,
+                           font=("Arial", max(6, smm(2.5))), fill="#555")
+
+        draw_page_preview(0)
 
         # Buttons
         btn_bar = tk.Frame(ws)
@@ -911,7 +1213,29 @@ class Letter:
         def generate_pdf(filepath: str):
             if not rl_canvas: return
             c = rl_canvas.Canvas(filepath, pagesize=(PAGE_W, PAGE_H))
-            draw_header(c)
+            top_line_y = draw_header(c)
+            
+            # Fetch appointments for PDF
+            conn = sqlite3.connect("dental.db")
+            cursor = conn.cursor()
+            today_str = datetime.now().strftime("%d-%m-%Y")
+            cursor.execute("SELECT Time, Patient_Name, Notes FROM Appointments WHERE Date = ? ORDER BY Time", (today_str,))
+            rows = cursor.fetchall()
+            
+            # Fetch doctor
+            cursor.execute("SELECT First_Name, Last_Name, Qualification FROM Doctors LIMIT 1")
+            doc_row = cursor.fetchone()
+            conn.close()
+            
+            if doc_row:
+                doc_name = f"Dr. {doc_row[0]} {doc_row[1]} {doc_row[2]}".strip()
+            else:
+                doc_name = "Dr. ANOOP KUMAR. B D S"
+                
+            appointments_list = [(r[0] if r[0] else "", r[1] if r[1] else "", r[2] if r[2] else "", "") for r in rows]
+            
+            draw_appointments(c, top_line_y, doc_name, appointments_list)
+            draw_footer(c)
             c.showPage()
             c.save()
 
@@ -925,10 +1249,10 @@ class Letter:
 
         AVAIL_H = 500
         AVAIL_W = 500
-        SCALE   = min(AVAIL_H / PAGE_H, AVAIL_W / PAGE_W)
-        CW      = int(PAGE_W * SCALE)
-        CH      = int(PAGE_H * SCALE)
-        mm_px   = SCALE * 2.8346
+        base_scale = min(AVAIL_H / PAGE_H, AVAIL_W / PAGE_W)
+        self.preview_scale = base_scale
+        CW      = int(PAGE_W * self.preview_scale)
+        CH      = int(PAGE_H * self.preview_scale)
 
         outer = tk.Frame(ws, bg="#c0c0c0")
         outer.pack(fill="both", expand=True, padx=10, pady=(6, 0))
@@ -945,51 +1269,219 @@ class Letter:
         vsb.config(command=cv.yview)
         hsb.config(command=cv.xview)
 
-        canvas_width = CW + 950      # Same as the Canvas width
-        OX = (canvas_width - CW) // 2
-        OY = 10
-        cv.create_rectangle(OX+4, OY+4, OX+CW+4, OY+CH+4, fill="#888888", outline="")
-        cv.create_rectangle(OX, OY, OX+CW, OY+CH, fill="white", outline="#aaaaaa", width=1)
+        state = {
+            "current_page": 0,
+            "pages": [0]
+        }
 
-        def ppx(pt):  return OX + int(pt * SCALE)
-        def ppy(pt):  return OY + int((PAGE_H - pt) * SCALE)
-        def pcx():    return OX + CW // 2
-        def smm(v):   return int(v * mm_px)
+        # Preview Controls (Zoom & Navigation)
+        ctrl_frame = tk.Frame(ws)
+        ctrl_frame.pack(fill="x", pady=4)
 
-        logo_cx = ppx(30*rl_mm)
-        logo_cy = ppy(PAGE_H - 20*rl_mm)
-        logo_r  = smm(15)
-        if os.path.isfile(LOGO_PATH):
-            try:
-                from PIL import Image as _PI, ImageTk as _ITk
-                _img = _PI.open(LOGO_PATH)
-                _img.thumbnail((logo_r*2, logo_r*2))
-                self._lp_logo = _ITk.PhotoImage(_img)
-                cv.create_image(logo_cx, logo_cy, image=self._lp_logo)
-            except Exception:
+        def prev_page():
+            if state["current_page"] > 0:
+                draw_page_preview(state["current_page"] - 1)
+
+        def next_page():
+            if state["current_page"] < len(state["pages"]) - 1:
+                draw_page_preview(state["current_page"] + 1)
+
+        btn_prev = tk.Button(ctrl_frame, text=" ◀", font=("Arial", 9, "bold"), command=prev_page)
+        btn_prev.pack(side="left", padx=5)
+
+        page_lbl = tk.Label(ctrl_frame, text="Page 1 of 1", font=("Arial", 10, "bold"), bg="white")
+        page_lbl.pack(side="left", padx=5)
+
+        btn_next = tk.Button(ctrl_frame, text=" ▶", font=("Arial", 9, "bold"), command=next_page)
+        btn_next.pack(side="left", padx=5)
+
+        def zoom_in():
+            if self.preview_scale < 2.0:
+                self.preview_scale = round(min(2.0, self.preview_scale + 0.1), 1)
+                draw_page_preview(state["current_page"])
+
+        def zoom_out():
+            if self.preview_scale > 0.25:
+                self.preview_scale = round(max(0.25, self.preview_scale - 0.1), 1)
+                draw_page_preview(state["current_page"])
+
+        def on_mouse_wheel(event):
+            if getattr(event, "delta", 0) > 0 or getattr(event, "num", 0) == 4:
+                zoom_in()
+            else:
+                zoom_out()
+            return "break"
+
+        cv.bind("<MouseWheel>", on_mouse_wheel)
+        cv.bind("<Button-4>", on_mouse_wheel)
+        cv.bind("<Button-5>", on_mouse_wheel)
+
+        btn_zoom_out = tk.Button(ctrl_frame, text="-", font=("Arial", 9, "bold"), command=zoom_out)
+        btn_zoom_out.pack(side="left", padx=5)
+
+        zoom_lbl = tk.Label(ctrl_frame, text="100%", font=("Arial", 10), bg="white")
+        zoom_lbl.pack(side="left", padx=5)
+
+        btn_zoom_in = tk.Button(ctrl_frame, text="+", font=("Arial", 9, "bold"), command=zoom_in)
+        btn_zoom_in.pack(side="left", padx=5)
+
+        def draw_page_preview(page_idx):
+            state["current_page"] = page_idx
+            cv.delete("all")
+            
+            scale = self.preview_scale
+            w_scaled = int(PAGE_W * scale)
+            h_scaled = int(PAGE_H * scale)
+            mm_px = scale * 2.8346
+            
+            cv.config(scrollregion=(0, 0, w_scaled + 20, h_scaled + 20))
+            
+            canvas_width = w_scaled + 950
+            OX = (canvas_width - w_scaled) // 2
+            OY = 10
+            
+            cv.create_rectangle(OX+4, OY+4, OX+w_scaled+4, OY+h_scaled+4, fill="#888888", outline="")
+            cv.create_rectangle(OX, OY, OX+w_scaled, OY+h_scaled, fill="white", outline="#aaaaaa", width=1)
+
+            def ppx(pt):  return OX + int(pt * scale)
+            def ppy(pt):  return OY + int((PAGE_H - pt) * scale)
+            def pcx():    return OX + w_scaled // 2
+            def smm(v):   return int(v * mm_px)
+
+            page_lbl.config(text=f"Page {page_idx + 1} of {len(state['pages'])}")
+            zoom_lbl.config(text=f"{int(scale / base_scale * 100)}%")
+
+            # Draw the logo
+            logo_cx = ppx(24*mm)
+            logo_cy = ppy(PAGE_H - 24*mm)
+            logo_r  = smm(13)
+            if os.path.isfile(LOGO_PATH):
+                try:
+                    from PIL import Image as _PI, ImageTk as _ITk
+                    _img = _PI.open(LOGO_PATH)
+                    _img.thumbnail((logo_r*2, logo_r*2))
+                    self._ta_logo = _ITk.PhotoImage(_img)
+                    cv.create_image(logo_cx, logo_cy, image=self._ta_logo)
+                except Exception:
+                    cv.create_oval(logo_cx-logo_r, logo_cy-logo_r,
+                                   logo_cx+logo_r, logo_cy+logo_r, outline="#555")
+            else:
                 cv.create_oval(logo_cx-logo_r, logo_cy-logo_r,
                                logo_cx+logo_r, logo_cy+logo_r, outline="#555")
-        else:
-            cv.create_oval(logo_cx-logo_r, logo_cy-logo_r,
-                           logo_cx+logo_r, logo_cy+logo_r, outline="#555")
 
-        cv.create_text(pcx(), ppy(PAGE_H - 15*rl_mm), text=CLINIC_NAME,
-                       font=("Times New Roman", max(10, smm(6)), "bold"), fill="#1a1a1a")
-        cv.create_text(pcx(), ppy(PAGE_H - 22*rl_mm), text=CLINIC_ADDRESS,
-                       font=("Arial", max(8, smm(3))), fill="#333")
-        cv.create_text(ppx(PAGE_W - 28*rl_mm), ppy(PAGE_H - 30*rl_mm),text=f"{CLINIC_PHONE}",
-                       font=("Arial", max(8, smm(3))), fill="#333")
-        cv.create_text(ppx(PAGE_W - 32*rl_mm), ppy(PAGE_H - 37*rl_mm),text=f"{CLINIC_RESI}",
-                       font=("Arial", max(8, smm(3))), fill="#333")
+            # Header Text
+            cv.create_text(pcx() + smm(8), ppy(PAGE_H - 20*mm), text=CLINIC_NAME,
+                           font=("Times New Roman", max(10, smm(7.2)), "bold"), fill="#1a1a1a")
+            cv.create_text(pcx() + smm(8), ppy(PAGE_H - 27*mm), text=CLINIC_ADDRESS,
+                           font=("Arial", max(8, smm(2.7))), fill="#333")
+            cv.create_text(ppx(PAGE_W - 18*mm), ppy(PAGE_H - 33*mm), text=f"{CLINIC_PHONE}",
+                           font=("Arial", max(8, smm(2.8))), fill="#333", anchor="ne")
+            cv.create_text(ppx(PAGE_W - 18*mm), ppy(PAGE_H - 38*mm), text=f"{CLINIC_RESI}",
+                           font=("Arial", max(8, smm(2.8))), fill="#333", anchor="ne")
 
-        rule_y   = ppy(PAGE_H - 47*rl_mm)
-        marg_px  = ppx(10*rl_mm)
-        right_px = OX + CW - smm(2)
-        cv.create_line(marg_px, rule_y, right_px, rule_y, fill="#333", width=1)
+            top_line_y = PAGE_H - 41 * mm
+            rule_y = ppy(top_line_y)
+            cv.create_line(ppx(15 * mm), rule_y, ppx(PAGE_W - 15 * mm), rule_y, fill="#1a1a1a", width=1)
+            
+            # Fetch appointments for preview
+            conn = sqlite3.connect("dental.db")
+            cursor = conn.cursor()
+            today_str = datetime.now().strftime("%d-%m-%Y")
+            cursor.execute("SELECT Time, Patient_Name, Notes FROM Appointments WHERE Date = ? ORDER BY Time", (today_str,))
+            rows = cursor.fetchall()
+            
+            # Fetch doctor
+            cursor.execute("SELECT First_Name, Last_Name, Qualification FROM Doctors LIMIT 1")
+            doc_row = cursor.fetchone()
+            conn.close()
+            
+            if doc_row:
+                doctor_name = f"Dr. {doc_row[0]} {doc_row[1]} {doc_row[2]}".strip()
+            else:
+                doctor_name = "Dr. ANOOP KUMAR. B D S"
+                
+            appointments_list = [(r[0] if r[0] else "", r[1] if r[1] else "", r[2] if r[2] else "", "") for r in rows]
+            
+            # Draw Appointments
+            left_margin = 15 * mm
+            right_margin = PAGE_W - 15 * mm
+            
+            y = top_line_y - 10 * mm
+            cv.create_text(pcx(), ppy(y), text="Appointments", font=("Arial", max(10, smm(4)), "bold"), fill="#1a1a1a")
+            
+            y -= 10 * mm
+            cv.create_text(ppx(left_margin), ppy(y + 1.5 * mm), text="Doctor :", font=("Arial", max(8, smm(3)), "bold"), fill="#1a1a1a", anchor="nw")
+            
+            box_x0 = ppx(left_margin + 20 * mm)
+            box_x1 = ppx(left_margin + 95 * mm)
+            box_y0 = ppy(y + 5 * mm)
+            box_y1 = ppy(y - 1 * mm)
+            cv.create_rectangle(box_x0, box_y0, box_x1, box_y1, outline="#555", width=1)
+            cv.create_text(box_x0 + smm(2), ppy(y + 1 * mm), text=doctor_name, font=("Arial", max(8, smm(3))), fill="#1a1a1a", anchor="nw")
+            
+            # Table boundaries
+            col_time_x0 = ppx(left_margin)
+            col_time_x1 = ppx(left_margin + 27 * mm)
+            col_name_x1 = ppx(left_margin + 65 * mm)
+            col_purpose_x1 = ppx(left_margin + 143 * mm)
+            col_duration_x1 = ppx(right_margin)
+            
+            table_top = y - 8 * mm
+            header_h = 7 * mm
+            row_h = 7 * mm
+            
+            # Draw header row
+            cv.create_rectangle(col_time_x0, ppy(table_top), col_duration_x1, ppy(table_top - header_h), outline="#555", width=1)
+            cv.create_line(col_time_x1, ppy(table_top), col_time_x1, ppy(table_top - header_h), fill="#555", width=1)
+            cv.create_line(col_name_x1, ppy(table_top), col_name_x1, ppy(table_top - header_h), fill="#555", width=1)
+            cv.create_line(col_purpose_x1, ppy(table_top), col_purpose_x1, ppy(table_top - header_h), fill="#555", width=1)
+            
+            cv.create_text(col_time_x0 + smm(2), ppy(table_top - header_h + 2 * mm), text="Time", font=("Arial", max(8, smm(3)), "bold"), fill="#1a1a1a", anchor="nw")
+            cv.create_text(col_time_x1 + smm(2), ppy(table_top - header_h + 2 * mm), text="PName", font=("Arial", max(8, smm(3)), "bold"), fill="#1a1a1a", anchor="nw")
+            cv.create_text(col_name_x1 + smm(2), ppy(table_top - header_h + 2 * mm), text="Purpose", font=("Arial", max(8, smm(3)), "bold"), fill="#1a1a1a", anchor="nw")
+            cv.create_text(col_purpose_x1 + smm(2), ppy(table_top - header_h + 2 * mm), text="Duration", font=("Arial", max(8, smm(3)), "bold"), fill="#1a1a1a", anchor="nw")
+            
+            # Draw rows
+            row_y = table_top - header_h
+            for time_s, name_s, purpose_s, duration_s in appointments_list:
+                cv.create_rectangle(col_time_x0, ppy(row_y), col_duration_x1, ppy(row_y - row_h), outline="#555", width=1)
+                cv.create_line(col_time_x1, ppy(row_y), col_time_x1, ppy(row_y - row_h), fill="#555", width=1)
+                cv.create_line(col_name_x1, ppy(row_y), col_name_x1, ppy(row_y - row_h), fill="#555", width=1)
+                cv.create_line(col_purpose_x1, ppy(row_y), col_purpose_x1, ppy(row_y - row_h), fill="#555", width=1)
+                
+                text_y = row_y - row_h + 2 * mm
+                cv.create_text(col_time_x0 + smm(2), ppy(text_y), text=time_s, font=("Arial", max(7, smm(2.7))), fill="#1a1a1a", anchor="nw")
+                cv.create_text(col_time_x1 + smm(2), ppy(text_y), text=name_s, font=("Arial", max(7, smm(2.7))), fill="#1a1a1a", anchor="nw")
+                cv.create_text(col_name_x1 + smm(2), ppy(text_y), text=purpose_s, font=("Arial", max(7, smm(2.7))), fill="#1a1a1a", anchor="nw")
+                cv.create_text(col_duration_x1 - smm(2), ppy(text_y), text=duration_s, font=("Arial", max(7, smm(2.7))), fill="#1a1a1a", anchor="ne")
+                row_y -= row_h
+                
+            # Footer
+            cv.create_text(pcx(), ppy(6*mm), text=CLINIC_HOURS, font=("Arial", max(6, smm(2.5))), fill="#555")
 
+        draw_page_preview(0)
 
-        cv.create_text(pcx(), ppy(6*rl_mm), text=CLINIC_HOURS,
-                       font=("Arial", max(6, smm(2.5))), fill="#555")
+        # Preview Controls (Zoom & Navigation)
+        ctrl_frame = tk.Frame(ws)
+        ctrl_frame.pack(fill="x", pady=4)
+
+        btn_prev = tk.Button(ctrl_frame, text=" ◀", font=("Arial", 9, "bold"), command=prev_page)
+        btn_prev.pack(side="left", padx=5)
+
+        page_lbl = tk.Label(ctrl_frame, text="Page 1 of 1", font=("Arial", 10, "bold"), bg="white")
+        page_lbl.pack(side="left", padx=5)
+
+        btn_next = tk.Button(ctrl_frame, text=" ▶", font=("Arial", 9, "bold"), command=next_page)
+        btn_next.pack(side="left", padx=5)
+
+        btn_zoom_out = tk.Button(ctrl_frame, text="-", font=("Arial", 9, "bold"), command=zoom_out)
+        btn_zoom_out.pack(side="left", padx=5)
+
+        zoom_lbl = tk.Label(ctrl_frame, text="100%", font=("Arial", 10), bg="white")
+        zoom_lbl.pack(side="left", padx=5)
+
+        btn_zoom_in = tk.Button(ctrl_frame, text="+", font=("Arial", 9, "bold"), command=zoom_in)
+        btn_zoom_in.pack(side="left", padx=5)
 
         btn_bar = tk.Frame(ws)
         btn_bar.pack(pady=8)
@@ -1042,8 +1534,6 @@ class Letter:
                   bg="#2E7D32", fg="white", command=_print_now).grid(row=0, column=1, padx=8)
         tk.Button(btn_bar, text="Close",            font=("Arial", 11), width=10,
                   command=self.close).grid(row=0, column=2, padx=8)
-
-
 
     def close(self):
         self.app.personal()

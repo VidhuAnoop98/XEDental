@@ -134,9 +134,9 @@ class Card:
             c.drawCentredString(x0 + w / 2, (title_top + title_bottom) / 2 - h * 0.028, CLINIC_NAME)
         
             # ---------- logo (top-right, alongside the field labels) ----------
-            logo_cx = x0 + w * 0.685
-            logo_cy = top_y(0.44)
-            draw_logo(c, logo_cx, logo_cy, w * 0.30, h * 0.42)
+            logo_cx = x0 + w * 0.820
+            logo_cy = top_y(0.40)
+            draw_logo(c, logo_cx, logo_cy, w * 0.25, h * 0.30)
         
             # ---------- field labels (left column) ----------
             field_x = x0 + w * 0.045
@@ -171,7 +171,7 @@ class Card:
                 y_pos = top_y(frac)
                 c.drawString(field_x, y_pos, f"{label} : {field_values[i]}")
                 if label == "Age":
-                    c.drawString(x0 + w * 0.40, y_pos, f"Gender : {gender_val}")
+                    c.drawString(x0 + w * 0.25, y_pos, f"Gender : {gender_val}")
         
             # ---------- horizontal rule ----------
             rule_y = top_y(0.755)
@@ -289,8 +289,8 @@ class Card:
                 cv.create_text(logo_cx, logo_cy, text="LOGO", font=("Helvetica", max(6, int(logo_r*0.4))), fill="#1a1a1a")
 
             field_x = tk_x0 + int(tk_w * 0.045)
-            field_fracs_top = 0.30
-            field_fracs_bottom = 0.70
+            field_fracs_top = 0.25
+            field_fracs_bottom = 0.65
             n = len(FIELD_LABELS)
             step = (field_fracs_bottom - field_fracs_top) / (n - 1)
             

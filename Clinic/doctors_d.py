@@ -7,9 +7,30 @@ import os
 class Doctors:
     def __init__(self,app):
         self.app = app
+        self.patient_data = getattr(app, "patient_data", {})
+        self.treatments_list = getattr(app, "treatments_list", [])
+        self.accounts_list = getattr(app, "accounts_list", [])
         self.app.clear_workspace()
         self.app.workspace = tk.Frame(self.app.root, bd=3, relief="solid")
         self.app.workspace.pack(padx=10, pady=10, fill="both", expand=True)
+
+    def get_doctor_list(self):
+        names = []
+        try:
+            conn = sqlite3.connect(getattr(self.app, "db_path", "dental.db")) if not hasattr(self.app, "get_db_connection") else self.app.get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT First_Name, Last_Name FROM Doctors ORDER BY First_Name, Last_Name")
+            rows = cursor.fetchall()
+            conn.close()
+            for first, last in rows:
+                name = f"Dr. {first or ''} {last or ''}".strip()
+                if name != "Dr." and name not in names:
+                    names.append(name)
+        except Exception:
+            pass
+        if not names:
+            names = ["Dr. Anoop", "Dr. Terry"]
+        return names
 
     def doctors_detials(self):
         self.app.clear_workspace()
@@ -36,25 +57,25 @@ class Doctors:
             new_treatments = []
             for child in doc_tree.get_children():
                 vals = doc_tree.item(child)["values"]
-                # Find matching treatment type from previous list to maintain Type
-                ttype = "Teeth Based"
-                for old in self.treatments_list:
-                    if str(old[0]) == str(vals[0]) and str(old[1]) == str(vals[1]) and str(old[2]) == str(vals[2]) and str(old[3]) == str(vals[3]):
-                        ttype = old[4]
-                        break
-                new_treatments.append((vals[0], vals[1], vals[2], vals[3], ttype))
+                tooth_val = str(vals[0]) if vals[0] and str(vals[0]) != "-" else ""
+                treatment_val = str(vals[1])
+                amount_val = str(vals[2])
+                amount_paid_val = str(vals[3]) if len(vals) > 3 else ""
+                doc_val = str(vals[4]) if len(vals) > 4 and vals[4] else "Dr. Anoop"
+                ttype_val = "General" if not tooth_val else "Teeth Based"
+                new_treatments.append((tooth_val, treatment_val, amount_val, amount_paid_val, doc_val, ttype_val))
             self.treatments_list = new_treatments
 
             self.accounts_list = []
-            for child in acc_tree.get_children():
-                self.accounts_list.append(acc_tree.item(child)["values"])
+            for child in self.acc_tree.get_children():
+                self.accounts_list.append(self.acc_tree.item(child)["values"])
             
             self.bill()
 
-        tk.Button(top_bar, text="← Back to Bill", font=("Arial", 10, "bold"),
-                  command=back_to_bill).pack(side="left", padx=5)
+        # tk.Button(top_bar, text="← Back to Bill", font=("Arial", 10, "bold"),
+        #           command=self.bill).pack(side="left", padx=5)
 
-        tk.Label(top_bar, text="Doctor's Details & Accounts", font=("Arial", 14, "bold")).pack(side="left", padx=20)
+        # tk.Label(top_bar, text="Doctor's Details & Accounts", font=("Arial", 14, "bold")).pack(side="left", padx=20)
 
         # --- Main content ---
         self.main_content = tk.Frame(self.app.workspace)
@@ -116,25 +137,25 @@ class Doctors:
         self.bill_email.grid(row=6, column=0, columnspan=2, padx=30, pady=2, sticky="we")
 
         # Populate patient details fields in doctors_details
-        if self.patient_data["patientid"]:
+        if self.patient_data.get("patientid"):
             self.bill_patientid.insert(0, self.patient_data["patientid"])
-        if self.patient_data["regno"]:
+        if self.patient_data.get("regno"):
             self.bill_regno.insert(0, self.patient_data["regno"])
-        if self.patient_data["patientname"]:
+        if self.patient_data.get("patientname"):
             self.bill_patientname.insert(0, self.patient_data["patientname"])
-        if self.patient_data["address1"]:
+        if self.patient_data.get("address1"):
             self.bill_address1.insert(0, self.patient_data["address1"])
-        if self.patient_data["address2"]:
+        if self.patient_data.get("address2"):
             self.bill_address2.insert(0, self.patient_data["address2"])
-        if self.patient_data["age"]:
+        if self.patient_data.get("age"):
             self.bill_age.insert(0, self.patient_data["age"])
-        if self.patient_data["gender"]:
+        if self.patient_data.get("gender"):
             self.bill_gender.set(self.patient_data["gender"])
-        if self.patient_data["office"]:
+        if self.patient_data.get("office"):
             self.bill_office.insert(0, self.patient_data["office"])
-        if self.patient_data["residence"]:
+        if self.patient_data.get("residence"):
             self.bill_residence.insert(0, self.patient_data["residence"])
-        if self.patient_data["email"]:
+        if self.patient_data.get("email"):
             self.bill_email.insert(0, self.patient_data["email"])
 
         # Search bind on Return key
@@ -190,6 +211,8 @@ class Doctors:
                     "residence": row[8] if row[8] else "",
                     "email": row[11] if row[11] else ""
                 }
+                self.load_patient_accounts(row[0])
+                self.load_patient_treatments(row[0])
             else:
                 messagebox.showinfo("Not Found", "No patient record found.")
             conn.close()
@@ -201,32 +224,39 @@ class Doctors:
         self.tree_frame = tk.Frame(self.left_frame)
         self.tree_frame.pack(side="top", fill="both", expand=True, padx=5, pady=5)
 
-        # Input row
-        tk.Label(self.tree_frame, text="Tooth No:").grid(row=0, column=0, padx=5, pady=2)
-        self.tooth_entry = tk.Entry(self.tree_frame, width=8)
-        self.tooth_entry.grid(row=0, column=1, padx=5, pady=2)
+        # Treatment Treeview Container
+        tree_container = tk.Frame(self.tree_frame)
+        tree_container.pack(side="top", fill="both", expand=True, padx=5, pady=(5, 2))
 
-        tk.Label(self.tree_frame, text="Treatment:").grid(row=0, column=2, padx=5, pady=2)
-        self.treatment_entry = tk.Entry(self.tree_frame, width=12)
-        self.treatment_entry.grid(row=0, column=3, padx=5, pady=2)
-
-        tk.Label(self.tree_frame, text="Amount:").grid(row=0, column=4, padx=5, pady=2)
-        self.amount_entry = tk.Entry(self.tree_frame, width=8)
-        self.amount_entry.grid(row=0, column=5, padx=5, pady=2)
-
-        tk.Label(self.tree_frame, text="Doctor:").grid(row=0, column=6, padx=5, pady=2)
-        self.doctors_entry = ttk.Combobox(self.tree_frame, values=["Dr. Anoop", "Dr. Terry"], width=12)
-        self.doctors_entry.grid(row=0, column=7, padx=5, pady=2)
-
-        # Treatment treeview
-        treat_columns = ("Tooth No", "Treatment", "Amount", "Doctor")
-        doc_tree = ttk.Treeview(self.tree_frame, column=treat_columns, show="headings", height=4)
+        treat_columns = ("Tooth No", "Treatment", "Amount", "Amount Paid", "Doctor")
+        doc_tree = ttk.Treeview(tree_container, column=treat_columns, show="headings", height=6)
+        self.doc_tree = doc_tree
         for col in treat_columns:
             doc_tree.heading(col, text=col)
             doc_tree.column(col, width=80)
+        doc_tree.pack(side="left", fill="both", expand=True)
 
-        # Total label
-        self.total_label = tk.Label(self.tree_frame, text="Total: ₹0.00", font=("Arial", 12, "bold"), fg="green")
+        doc_scroll = ttk.Scrollbar(tree_container, orient="vertical", command=doc_tree.yview)
+        doc_scroll.pack(side="right", fill="y")
+        doc_tree.configure(yscrollcommand=doc_scroll.set)
+
+        # Treatment Control & Payment Bottom Bar
+        treat_ctrl_frame = tk.Frame(self.tree_frame, bg="#EAE6DF", bd=1, relief="solid")
+        treat_ctrl_frame.pack(side="bottom", fill="x", padx=5, pady=5)
+
+        tk.Label(treat_ctrl_frame, text="Doctor:", font=("Arial", 9, "bold"), bg="#EAE6DF").pack(side="left", padx=(5, 2), pady=4)
+        doc_list = self.get_doctor_list()
+        self.doctors_entry = ttk.Combobox(treat_ctrl_frame, values=doc_list, width=14)
+        if doc_list:
+            self.doctors_entry.set(doc_list[0])
+        self.doctors_entry.pack(side="left", padx=2, pady=4)
+
+        tk.Label(treat_ctrl_frame, text="Amount Paid:", font=("Arial", 9, "bold"), bg="#EAE6DF").pack(side="left", padx=(8, 2), pady=4)
+        self.amount_paid_entry = tk.Entry(treat_ctrl_frame, width=9)
+        self.amount_paid_entry.pack(side="left", padx=2, pady=4)
+
+        self.total_label = tk.Label(treat_ctrl_frame, text="Total: ₹0.00", font=("Arial", 11, "bold"), fg="green", bg="#EAE6DF")
+        self.total_label.pack(side="right", padx=8, pady=4)
 
         def update_total():
             total = 0.0
@@ -237,18 +267,54 @@ class Doctors:
                     pass
             self.total_label.config(text=f"Total: ₹{total:.2f}")
 
-        def add_item():
-            tooth = self.tooth_entry.get()
-            treatment = self.treatment_entry.get()
-            amount = self.amount_entry.get()
-            doctors = self.doctors_entry.get()
-            if tooth or treatment or amount or doctors:
-                doc_tree.insert("", "end", values=(tooth, treatment, amount, doctors))
-                self.tooth_entry.delete(0, 'end')
-                self.treatment_entry.delete(0, 'end')
-                self.amount_entry.delete(0, 'end')
-                self.doctors_entry.set('')
-                update_total()
+        self.update_total = update_total
+
+        def add_payment():
+            selected = doc_tree.selection()
+            paid_str = self.amount_paid_entry.get().strip()
+            selected_doc = self.doctors_entry.get().strip() or "Dr. Anoop"
+
+            if not paid_str:
+                messagebox.showwarning("Input Required", "Please enter Amount Paid.")
+                return
+
+            particulars_val = "Treatment Payment"
+            debit_val = "0.00"
+
+            if selected:
+                item_id = selected[0]
+                vals = list(doc_tree.item(item_id)["values"])
+                vals[3] = paid_str
+                if len(vals) > 4 and not vals[4]:
+                    vals[4] = selected_doc
+                doc_tree.item(item_id, values=vals)
+                particulars_val = vals[1] if len(vals) > 1 and vals[1] else "Treatment Payment"
+                debit_val = vals[2] if len(vals) > 2 and vals[2] else "0.00"
+
+            # Connect Credit into Accounts table (acc_tree)
+            date_str = datetime.now().strftime("%d-%m-%Y")
+            credit_val = paid_str
+
+            balance = 0.0
+            for child in acc_tree.get_children():
+                values = acc_tree.item(child)["values"]
+                try:
+                    balance += float(values[1]) if values[1] else 0.0
+                except (ValueError, IndexError):
+                    pass
+                try:
+                    balance -= float(values[2]) if values[2] else 0.0
+                except (ValueError, IndexError):
+                    pass
+            try:
+                balance -= float(credit_val) if credit_val else 0.0
+            except ValueError:
+                pass
+
+            acc_tree.insert("", "end", values=(date_str, "0.00", credit_val, particulars_val, f"{balance:.2f}"))
+            self.amount_paid_entry.delete(0, 'end')
+            update_total()
+            calculate_balance()
 
         def delete_row():
             selected = doc_tree.selection()
@@ -259,18 +325,49 @@ class Doctors:
             else:
                 messagebox.showwarning("No Selection", "Please select a row to delete.")
 
-        tk.Button(self.tree_frame, text="Add", command=add_item).grid(row=0, column=8, padx=5, pady=2)
-        tk.Button(self.tree_frame, text="Delete", command=delete_row, fg="red").grid(row=0, column=9, padx=5, pady=2)
+        tk.Button(treat_ctrl_frame, text="Add Payment", command=add_payment, bg="#4CAF50", fg="white", font=("Arial", 9, "bold")).pack(side="left", padx=4, pady=4)
+        tk.Button(treat_ctrl_frame, text="Delete Row", command=delete_row, fg="red", font=("Arial", 9)).pack(side="left", padx=4, pady=4)
 
-        doc_tree.grid(row=1, column=0, columnspan=10, sticky="nsew", padx=10, pady=10)
-        self.tree_frame.grid_rowconfigure(1, weight=1)
+        def on_doc_tree_select(event):
+            selected = doc_tree.selection()
+            if selected:
+                vals = doc_tree.item(selected[0])["values"]
+                if len(vals) > 3 and vals[3]:
+                    self.amount_paid_entry.delete(0, 'end')
+                    self.amount_paid_entry.insert(0, str(vals[3]))
+                elif len(vals) > 2 and vals[2]:
+                    self.amount_paid_entry.delete(0, 'end')
+                    self.amount_paid_entry.insert(0, str(vals[2]))
+                if len(vals) > 4 and vals[4]:
+                    self.doctors_entry.set(str(vals[4]))
 
-        self.total_label.grid(row=2, column=0, columnspan=10, padx=10, pady=5, sticky="e")
+        doc_tree.bind("<<TreeviewSelect>>", on_doc_tree_select)
 
         # Populate doc_tree from treatments list
         for item in self.treatments_list:
-            doc_tree.insert("", "end", values=(item[0], item[1], item[2], item[3]))
+            tooth = item[0] if len(item) > 0 and item[0] else "-"
+            treatment = item[1] if len(item) > 1 else ""
+            amount = item[2] if len(item) > 2 else "0.00"
+
+            if len(item) >= 6:
+                amount_paid = item[3] if len(item) > 3 else ""
+                doc = item[4] if len(item) > 4 and item[4] else "Dr. Anoop"
+            elif len(item) >= 5:
+                # legacy format: (tooth, treatment, amount, doctor, type)
+                amount_paid = ""
+                doc = item[3] if len(item) > 3 and item[3] else "Dr. Anoop"
+            elif len(item) == 4:
+                amount_paid = ""
+                doc = item[3] if len(item) > 3 and item[3] else "Dr. Anoop"
+            else:
+                amount_paid = ""
+                doc = "Dr. Anoop"
+
+            doc_tree.insert("", "end", values=(tooth, treatment, amount, amount_paid, doc))
         update_total()
+
+        if self.patient_data.get("patientid") and not doc_tree.get_children():
+            self.load_patient_treatments(self.patient_data["patientid"])
 
         # ================ Accounts Section (Right - Bottom) ================
         self.accounts = tk.LabelFrame(self.right_frame, text="Accounts", font=("Arial", 10, "bold"))
@@ -280,36 +377,36 @@ class Doctors:
         acc_input_frame = tk.Frame(self.accounts)
         acc_input_frame.pack(fill="x", padx=10, pady=(5, 0))
 
-        tk.Label(acc_input_frame, text="Date:").grid(row=0, column=0, padx=3, pady=2)
-        self.acc_date_entry = tk.Entry(acc_input_frame, width=10)
-        self.acc_date_entry.insert(0, datetime.now().strftime("%d-%m-%Y"))
-        self.acc_date_entry.grid(row=0, column=1, padx=3, pady=2)
+        # tk.Label(acc_input_frame, text="Date:").grid(row=0, column=0, padx=3, pady=2)
+        # self.acc_date_entry = tk.Entry(acc_input_frame, width=10)
+        # self.acc_date_entry.insert(0, datetime.now().strftime("%d-%m-%Y"))
+        # self.acc_date_entry.grid(row=0, column=1, padx=3, pady=2)
 
-        tk.Label(acc_input_frame, text="Debit:").grid(row=0, column=2, padx=3, pady=2)
-        self.acc_debit_entry = tk.Entry(acc_input_frame, width=8)
-        self.acc_debit_entry.grid(row=0, column=3, padx=3, pady=2)
+        # tk.Label(acc_input_frame, text="Debit:").grid(row=0, column=2, padx=3, pady=2)
+        # self.acc_debit_entry = tk.Entry(acc_input_frame, width=8)
+        # self.acc_debit_entry.grid(row=0, column=3, padx=3, pady=2)
 
-        tk.Label(acc_input_frame, text="Credit:").grid(row=0, column=4, padx=3, pady=2)
-        self.acc_credit_entry = tk.Entry(acc_input_frame, width=8)
-        self.acc_credit_entry.grid(row=0, column=5, padx=3, pady=2)
+        # tk.Label(acc_input_frame, text="Credit:").grid(row=0, column=4, padx=3, pady=2)
+        # self.acc_credit_entry = tk.Entry(acc_input_frame, width=8)
+        # self.acc_credit_entry.grid(row=0, column=5, padx=3, pady=2)
 
-        tk.Label(acc_input_frame, text="Particulars:").grid(row=0, column=6, padx=3, pady=2)
-        self.acc_particulars_entry = tk.Entry(acc_input_frame, width=12)
-        self.acc_particulars_entry.grid(row=0, column=7, padx=3, pady=2)
+        # tk.Label(acc_input_frame, text="Particulars:").grid(row=0, column=6, padx=3, pady=2)
+        # self.acc_particulars_entry = tk.Entry(acc_input_frame, width=12)
+        # self.acc_particulars_entry.grid(row=0, column=7, padx=3, pady=2)
 
         acc_columns = ("Date", "Debit", "Credit", "Particulars", "Balance")
-        acc_tree = ttk.Treeview(self.accounts, column=acc_columns, show="headings", height=4)
+        self.acc_tree = ttk.Treeview(self.accounts, column=acc_columns, show="headings", height=4)
         for col in acc_columns:
-            acc_tree.heading(col, text=col)
-            acc_tree.column(col, width=80)
+            self.acc_tree.heading(col, text=col)
+            self.acc_tree.column(col, width=80)
 
         # Balance label
         self.balance_label = tk.Label(self.accounts, text="Balance: ₹0.00", font=("Arial", 11, "bold"), fg="blue")
 
         def calculate_balance():
             balance = 0.0
-            for child in acc_tree.get_children():
-                values = acc_tree.item(child)["values"]
+            for child in self.acc_tree.get_children():
+                values = self.acc_tree.item(child)["values"]
                 try:
                     balance += float(values[1]) if values[1] else 0.0  # Debit
                 except (ValueError, IndexError):
@@ -346,50 +443,152 @@ class Doctors:
                     balance -= float(credit) if credit else 0.0
                 except ValueError:
                     pass
-                acc_tree.insert("", "end", values=(date, debit, credit, particulars, f"{balance:.2f}"))
-                self.acc_debit_entry.delete(0, 'end')
-                self.acc_credit_entry.delete(0, 'end')
-                self.acc_particulars_entry.delete(0, 'end')
+                self.acc_tree.insert("", "end", values=(date, debit, credit, particulars, f"{balance:.2f}"))
+                if hasattr(self, 'acc_debit_entry') and self.acc_debit_entry:
+                    self.acc_debit_entry.delete(0, 'end')
+                if hasattr(self, 'acc_credit_entry') and self.acc_credit_entry:
+                    self.acc_credit_entry.delete(0, 'end')
+                if hasattr(self, 'acc_particulars_entry') and self.acc_particulars_entry:
+                    self.acc_particulars_entry.delete(0, 'end')
                 calculate_balance()
 
         def delete_acc_row():
-            selected = acc_tree.selection()
+            selected = self.acc_tree.selection()
             if selected:
                 for item in selected:
-                    acc_tree.delete(item)
+                    self.acc_tree.delete(item)
                 calculate_balance()
             else:
                 messagebox.showwarning("No Selection", "Please select a row to delete.")
 
-        tk.Button(acc_input_frame, text="Add", command=add_acc_item).grid(row=0, column=8, padx=3, pady=2)
-        tk.Button(acc_input_frame, text="Delete", command=delete_acc_row, fg="red").grid(row=0, column=9, padx=3, pady=2)
-
-        acc_tree.pack(fill="both", expand=True, padx=10, pady=5)
+        self.acc_tree.pack(fill="both", expand=True, padx=10, pady=5)
         self.balance_label.pack(padx=10, pady=5, anchor="e")
 
         # Populate accounts list
-        if not hasattr(self, 'accounts_list'):
+        pid_val = self.patient_data.get("patientid") if hasattr(self, 'patient_data') and self.patient_data else ""
+        if pid_val:
+            self.load_patient_accounts(pid_val)
+        elif not hasattr(self, 'accounts_list') or not self.accounts_list:
             self.accounts_list = []
+            date_str = datetime.now().strftime("%d-%m-%Y")
+            balance = 0.0
+            for item in getattr(self, 'treatments_list', []):
+                tooth = item[0] if len(item) > 0 and item[0] else "-"
+                treatment = item[1] if len(item) > 1 else "Treatment"
+                amount = item[2] if len(item) > 2 else "0.00"
+
+                if len(item) >= 5 and (str(item[4]) in ("Teeth Based", "General") or str(item[3]).startswith("Dr.")):
+                    amount_paid = "0.00"
+                elif len(item) >= 5:
+                    amount_paid = item[3] if item[3] else "0.00"
+                else:
+                    amount_paid = "0.00"
+
+                deb = float(amount) if amount else 0.0
+                crd = float(amount_paid) if amount_paid else 0.0
+                balance += deb - crd
+                self.acc_tree.insert("", "end", values=(date_str, f"{deb:.2f}", f"{crd:.2f}", treatment, f"{balance:.2f}"))
+            calculate_balance()
         else:
             for item in self.accounts_list:
-                acc_tree.insert("", "end", values=item)
+                self.acc_tree.insert("", "end", values=item)
             calculate_balance()
 
         # ================ Bottom Action Bar ================
         bottom_bar = tk.Frame(self.app.workspace)
         bottom_bar.pack(side="bottom", fill="x", padx=10, pady=10)
 
+        btn_bill = tk.Button(bottom_bar, text="← Back to Bill", font=("Arial", 11, "bold"),
+                             bg="#FF9800", fg="white", command=self.bill)
+        btn_bill.pack(side="left", padx=10)
+
         btn_print = tk.Button(bottom_bar, text="Print Invoice / Receipt", font=("Arial", 11, "bold"),
-                              bg="#4CAF50", fg="white", command=lambda: self.generate_bill_pdf(doc_tree, acc_tree))
+                              bg="#4CAF50", fg="white", command=lambda: self.generate_bill_pdf(doc_tree, self.acc_tree))
         btn_print.pack(side="left", padx=10)
 
         btn_save_db = tk.Button(bottom_bar, text="Save & Finalize Bill", font=("Arial", 11, "bold"),
-                                bg="#2196F3", fg="white", command=lambda: self.save_bill_db(doc_tree, acc_tree))
+                                bg="#2196F3", fg="white", command=lambda: self.save_bill_db(doc_tree, self.acc_tree))
         btn_save_db.pack(side="left", padx=10)
 
-        btn_close_details = tk.Button(bottom_bar, text="Close", font=("Arial", 11),
-                                      command=self.close)
+        btn_close_details = tk.Button(bottom_bar, text="Close", font=("Arial", 11, "bold"),
+                                      bg="#f44336", fg="white", command=self.close)
         btn_close_details.pack(side="right", padx=10)
+
+    def load_patient_treatments(self, patient_id):
+        if not hasattr(self, 'doc_tree') or not self.doc_tree:
+            return
+        for child in self.doc_tree.get_children():
+            self.doc_tree.delete(child)
+        
+        try:
+            conn = get_db_connection(self.app)
+            cursor = conn.cursor()
+            pid_str = str(patient_id).strip()
+            reg_str = f"REG-{int(pid_str):04d}" if pid_str.isdigit() else pid_str
+            cursor.execute("""
+                SELECT bt.Tooth_No, bt.Treatment, bt.Amount, '', bt.Doctor
+                FROM Bill_Treatments bt
+                JOIN Bills b ON bt.Bill_ID = b.id
+                WHERE b.Patient_ID = ? OR b.Reg_No = ?
+                ORDER BY bt.id ASC
+            """, (pid_str, reg_str))
+            rows = cursor.fetchall()
+            conn.close()
+
+            for r in rows:
+                tooth = r[0] if r[0] else "-"
+                treatment = r[1] if r[1] else ""
+                amount = f"{float(r[2]):.2f}" if r[2] else "0.00"
+                doc = r[4] if r[4] else ""
+                self.doc_tree.insert("", "end", values=(tooth, treatment, amount, "", doc))
+            if hasattr(self, 'update_total') and callable(self.update_total):
+                self.update_total()
+        except Exception as e:
+            print(f"Error loading doctor treatments: {e}")
+
+    def load_patient_accounts(self, patient_id):
+        if not hasattr(self, 'acc_tree') or not self.acc_tree:
+            return
+        for child in self.acc_tree.get_children():
+            self.acc_tree.delete(child)
+        
+        try:
+            conn = get_db_connection(self.app)
+            cursor = conn.cursor()
+            pid_str = str(patient_id).strip()
+            reg_str = f"REG-{int(pid_str):04d}" if pid_str.isdigit() else pid_str
+            cursor.execute("""
+                SELECT ba.Date, ba.Debit, ba.Credit, ba.Particulars, ba.Balance
+                FROM Bill_Accounts ba
+                JOIN Bills b ON ba.Bill_ID = b.id
+                WHERE b.Patient_ID = ? OR b.Reg_No = ?
+                ORDER BY ba.id ASC
+            """, (pid_str, reg_str))
+            rows = cursor.fetchall()
+            conn.close()
+
+            balance = 0.0
+            has_today = False
+            today_str = datetime.now().strftime("%d-%m-%Y")
+
+            for row in rows:
+                date_val, debit_val, credit_val, part_val, bal_val = row
+                d_num = float(debit_val) if debit_val else 0.0
+                c_num = float(credit_val) if credit_val else 0.0
+                balance += d_num - c_num
+                if str(date_val).strip() == today_str:
+                    has_today = True
+                self.acc_tree.insert("", "end", values=(date_val, f"{d_num:.2f}", f"{c_num:.2f}", part_val, f"{balance:.2f}"))
+
+            # If past transactions exist and today's save date ("now") is not present,
+            # automatically append current save date row carrying forward past balance to now.
+            if rows and not has_today:
+                self.acc_tree.insert("", "end", values=(today_str, "0.00", "0.00", "Balance B/F", f"{balance:.2f}"))
+
+            if hasattr(self, 'balance_label'):
+                self.balance_label.config(text=f"Balance: ₹{balance:.2f}")
+        except Exception as e:
+            print(f"Error loading accounts: {e}")
 
     def bill(self):
         """Navigate back to the Bill view, passing current data."""
@@ -428,19 +627,21 @@ class Doctors:
         total_debit = 0.0
         total_credit = 0.0
         accounts = []
-        for child in acc_tree.get_children():
-            values = acc_tree.item(child)["values"]
-            try:
-                deb = float(values[1]) if values[1] else 0.0
-            except (ValueError, IndexError):
-                deb = 0.0
-            try:
-                crd = float(values[2]) if values[2] else 0.0
-            except (ValueError, IndexError):
-                crd = 0.0
-            total_debit += deb
-            total_credit += crd
-            accounts.append(values)
+        acc_tree_obj = acc_tree if acc_tree is not None else getattr(self, 'acc_tree', None)
+        if acc_tree_obj:
+            for child in acc_tree_obj.get_children():
+                values = acc_tree_obj.item(child)["values"]
+                try:
+                    deb = float(values[1]) if values[1] else 0.0
+                except (ValueError, IndexError):
+                    deb = 0.0
+                try:
+                    crd = float(values[2]) if values[2] else 0.0
+                except (ValueError, IndexError):
+                    crd = 0.0
+                total_debit += deb
+                total_credit += crd
+                accounts.append(values)
 
         balance_due = total_debit - total_credit
         current_date = datetime.now().strftime("%d-%m-%Y")
@@ -465,10 +666,13 @@ class Doctors:
                     if str(old[0]) == str(treat[0]) and str(old[1]) == str(treat[1]) and str(old[2]) == str(treat[2]) and str(old[3]) == str(treat[3]):
                         ttype = old[4] if len(old) > 4 else "Teeth Based"
                         break
+                doctor_name = str(treat[4]).strip() if len(treat) > 4 and treat[4] else "Dr. Anoop"
+                if not doctor_name or doctor_name.isdigit():
+                    doctor_name = "Dr. Anoop"
                 cursor.execute('''
                     INSERT INTO Bill_Treatments (Bill_ID, Tooth_No, Treatment, Amount, Doctor, Type)
                     VALUES (?, ?, ?, ?, ?, ?)
-                ''', (bill_id, str(treat[0]), str(treat[1]), float(treat[2]), str(treat[3]), ttype))
+                ''', (bill_id, str(treat[0]), str(treat[1]), float(treat[2]), doctor_name, ttype))
 
             # Insert accounts
             for acc in accounts:
@@ -542,50 +746,82 @@ class Doctors:
         # Page size and dimensions
         width, height = A4
         
-        # Draw professional invoice header
-        pdf.setFont("Helvetica-Bold", 20)
+        # Draw Header & Logo matching letter_paper.py style
+        logo_path = os.path.join(script_dir, "Dental_logo.png")
+        if os.path.isfile(logo_path):
+            try:
+                from reportlab.lib.utils import ImageReader
+                img = ImageReader(logo_path)
+                iw, ih = img.getSize()
+                box = 50.0
+                scale = min(box / iw, box / ih)
+                w, h = iw * scale, ih * scale
+                pdf.drawImage(img, 40, height - 60, width=w, height=h, mask="auto", preserveAspectRatio=True)
+            except Exception:
+                pass
+        
+        # Header text
+        pdf.setFont("Times-Bold", 20)
         pdf.setFillColor(colors.HexColor("#1A365D")) # Premium dark blue
-        pdf.drawCentredString(width/2.0, height - 60, "DR. ANOOP'S ANUPAM DENTAL CLINIC")
+        pdf.drawCentredString(width / 2.0, height - 35, "ANUPAM DENTAL CLINIC")
         
         pdf.setFont("Helvetica", 9)
         pdf.setFillColor(colors.HexColor("#4A5568"))
-        pdf.drawCentredString(width/2.0, height - 75, "West Gate, Vaikom, Kottayam Dist, Kerala - 686141")
-        pdf.drawCentredString(width/2.0, height - 88, "Phone: +91 9447185369 | Email: info@anupamdental.com")
+        pdf.drawCentredString(width / 2.0, height - 50, "West Gate Vaikom - 686141")
+        
+        # Right-aligned Clinic & Resi Phone
+        phone_str, resi_str = "Clinic : 9446046868", "Resi   : 216858"
+        try:
+            conn = get_db_connection(self.app)
+            cursor = conn.cursor()
+            cursor.execute("SELECT key, value FROM Clinic_Settings WHERE key IN ('clinic_mobile', 'clinic_work', 'clinic_phone', 'clinic_resi')")
+            c_rows = dict(cursor.fetchall())
+            conn.close()
+            mob = c_rows.get("clinic_mobile") or c_rows.get("clinic_phone") or "9446046868"
+            wrk = c_rows.get("clinic_work") or c_rows.get("clinic_resi") or "216858"
+            phone_str = mob if ("Clinic" in mob or "clinic" in mob) else f"Clinic : {mob}"
+            resi_str = wrk if ("Resi" in wrk or "resi" in wrk) else f"Resi   : {wrk}"
+        except Exception:
+            pass
+            
+        pdf.setFont("Helvetica", 9)
+        pdf.drawRightString(width - 40, height - 38, phone_str)
+        pdf.drawRightString(width - 40, height - 50, resi_str)
         
         # Header separator line
-        pdf.setStrokeColor(colors.HexColor("#CBD5E1"))
+        pdf.setStrokeColor(colors.HexColor("#1A365D"))
         pdf.setLineWidth(1)
-        pdf.line(40, height - 100, width - 40, height - 100)
+        pdf.line(40, height - 68, width - 40, height - 68)
         
         # Invoice Title
         pdf.setFont("Helvetica-Bold", 14)
         pdf.setFillColor(colors.HexColor("#1A365D"))
-        pdf.drawString(40, height - 125, "INVOICE / RECEIPT")
+        pdf.drawString(40, height - 92, "INVOICE / RECEIPT")
         
         pdf.setFont("Helvetica", 10)
         pdf.setFillColor(colors.HexColor("#4A5568"))
-        pdf.drawRightString(width - 40, height - 125, f"Date: {datetime.now().strftime('%d-%m-%Y')}")
-        pdf.drawRightString(width - 40, height - 140, f"Invoice No: INV-{datetime.now().strftime('%Y%m')}-{p_id if p_id else '0000'}")
+        pdf.drawRightString(width - 40, height - 92, f"Date: {datetime.now().strftime('%d-%m-%Y')}")
+        pdf.drawRightString(width - 40, height - 107, f"Invoice No: INV-{datetime.now().strftime('%Y%m')}-{p_id if p_id else '0000'}")
         
         # Patient Info Block (Left Column)
         pdf.setFont("Helvetica-Bold", 10)
         pdf.setFillColor(colors.HexColor("#2D3748"))
-        pdf.drawString(45, height - 170, "Billed To:")
+        pdf.drawString(45, height - 132, "Billed To:")
         pdf.setFont("Helvetica", 10)
-        pdf.drawString(45, height - 185, f"Patient Name: {p_name}")
-        pdf.drawString(45, height - 200, f"Patient ID: {p_id}   |   Reg No: {reg_no}")
-        pdf.drawString(45, height - 215, f"Age / Sex: {age} / {gender}")
-        pdf.drawString(45, height - 230, f"Address: {addr1}, {addr2}")
-        pdf.drawString(45, height - 245, f"Phone: {office} (O), {residence} (R)")
-        pdf.drawString(45, height - 260, f"Email: {email}")
+        pdf.drawString(45, height - 147, f"Patient Name: {p_name}")
+        pdf.drawString(45, height - 162, f"Patient ID: {p_id}   |   Reg No: {reg_no}")
+        pdf.drawString(45, height - 177, f"Age / Sex: {age} / {gender}")
+        pdf.drawString(45, height - 192, f"Address: {addr1}, {addr2}")
+        pdf.drawString(45, height - 207, f"Phone: {office} (O), {residence} (R)")
+        pdf.drawString(45, height - 222, f"Email: {email}")
         
         # Box background for Patient Info
         pdf.setStrokeColor(colors.HexColor("#E2E8F0"))
         pdf.setLineWidth(0.5)
-        pdf.rect(40, height - 270, width - 80, 115)
+        pdf.rect(40, height - 230, width - 80, 110)
         
         # Treatment details table header
-        y = height - 300
+        y = height - 260
         pdf.setFont("Helvetica-Bold", 11)
         pdf.setFillColor(colors.HexColor("#1A365D"))
         pdf.drawString(40, y, "Treatment Details")
@@ -623,7 +859,8 @@ class Doctors:
             pdf.drawString(45, y - 13, str(si))
             pdf.drawString(90, y - 13, str(treat[0]))
             pdf.drawString(170, y - 13, str(treat[1]))
-            pdf.drawString(370, y - 13, str(treat[3]))
+            doctor_name = str(treat[4]) if len(treat) > 4 and treat[4] else "Dr. Anoop"
+            pdf.drawString(370, y - 13, doctor_name)
             pdf.drawRightString(width - 45, y - 13, f"{float(treat[2]):.2f}" if treat[2] else "0.00")
             pdf.line(40, y - 18, width - 40, y - 18)
             y -= 18

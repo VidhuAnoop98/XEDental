@@ -6,15 +6,16 @@ import os
 class Prescription:
     def __init__(self, app):
         self.app = app
-        self.patient_data = {}
-        self.db_path = r"d:\XEDENTAL\Jayesh\Tkinter_Version1\Appu_Version\dental.db"
-        
+        self.patient_data = getattr(app, "patient_data", {})
         self.app.clear_workspace()
         self.app.workspace = tk.Frame(self.app.root, bd=3, relief="solid")
         self.app.workspace.pack(padx=10, pady=10, fill="both", expand=True)
 
     def get_db_connection(self):
-        return sqlite3.connect(self.db_path)
+        if hasattr(self.app, 'get_db_connection'):
+            return self.app.get_db_connection()
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        return sqlite3.connect(os.path.join(script_dir, "dental.db"))
 
     def prescription(self):
         tk.Label(self.app.workspace, text="Prescription", font=("Arial", 10, "bold"), fg="navy").pack(pady=2)
@@ -130,7 +131,16 @@ class Prescription:
             # Doctors
             c.execute("SELECT First_Name, Last_Name FROM Doctors")
             docs = c.fetchall()
-            doc_list = [f"Dr. {d[0]} {d[1]}" for d in docs]
+            doc_list = []
+            for d in docs:
+                fname = (d[0] or "").strip()
+                lname = (d[1] or "").strip()
+                full_name = f"{fname} {lname}".strip()
+                if full_name:
+                    if not full_name.lower().startswith("dr.") and not full_name.lower().startswith("dr "):
+                        full_name = f"Dr. {full_name}"
+                    if full_name not in doc_list:
+                        doc_list.append(full_name)
             if doc_list:
                 self.doctor_combo['values'] = doc_list
                 self.doctor_combo.current(0)
@@ -389,4 +399,13 @@ class Prescription:
         self.load_medicine_edit_data()
 
     def close(self):
-        self.app.bill()
+        try:
+            from bill import Bill
+            b = Bill(self.app)
+            b.patient_data = getattr(self, 'patient_data', {})
+            b.bill()
+        except Exception:
+            if hasattr(self.app, 'registration'):
+                self.app.registration()
+            elif hasattr(self.app, 'clear_workspace'):
+                self.app.clear_workspace()

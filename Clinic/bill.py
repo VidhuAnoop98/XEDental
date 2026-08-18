@@ -13,6 +13,62 @@ class Bill:
         self.app.workspace = tk.Frame(self.app.root, bd=3, relief="solid")
         self.app.workspace.pack(padx=10, pady=10, fill="both", expand=True)
 
+    def get_doctor_names_from_db(self):
+        names = []
+        try:
+            conn = get_db_connection(self.app)
+            cursor = conn.cursor()
+            cursor.execute("SELECT First_Name, Last_Name FROM Doctors ORDER BY First_Name, Last_Name")
+            rows = cursor.fetchall()
+            conn.close()
+
+            for first, last in rows:
+                fname = (first or "").strip()
+                lname = (last or "").strip()
+                full_name = f"{fname} {lname}".strip()
+                if not full_name:
+                    continue
+                if not full_name.lower().startswith("dr.") and not full_name.lower().startswith("dr "):
+                    full_name = f"Dr. {full_name}"
+                if full_name not in names:
+                    names.append(full_name)
+        except Exception:
+            pass
+
+        if not names:
+            names = ["Dr. Anoop", "Dr. Terry"]
+        return names
+
+    def get_treatments_and_fees(self):
+        default_fees = {
+            "Cleaning": 500.0,
+            "Consultation": 200.0,
+            "Crown": 4500.0,
+            "Denture": 12000.0,
+            "Extraction": 1000.0,
+            "Filling": 750.0,
+            "Implant": 25000.0,
+            "RCT": 3500.0,
+            "Scaling": 600.0,
+            "X-Ray": 300.0,
+        }
+        try:
+            conn = get_db_connection(self.app)
+            cursor = conn.cursor()
+            cursor.execute("SELECT Treatment, Rate, Amount FROM Treatment_Fees ORDER BY Treatment")
+            rows = cursor.fetchall()
+            conn.close()
+
+            if rows:
+                fee_map = {}
+                for treatment, rate, amount in rows:
+                    if treatment:
+                        fee_map[treatment] = amount if (amount is not None and amount > 0) else (rate if rate is not None else 0.0)
+                return fee_map if fee_map else default_fees
+            return default_fees
+        except Exception:
+            return default_fees
+
     def bill(self):
         # Initialize patient_data if not already present
         if not hasattr(self, 'patient_data'):
@@ -246,23 +302,23 @@ class Bill:
         # Treatment type variable
         self.treatment_type_var = tk.StringVar(value="Teeth Based")
 
-        def set_teeth_based():
-            self.treatment_type_var.set("Teeth Based")
-            btn_teeth.config(relief="sunken", bg="#C0EBE7")
-            btn_general.config(relief="raised", bg="SystemButtonFace")
+        # def set_teeth_based():
+        #     self.treatment_type_var.set("Teeth Based")
+        #     btn_teeth.config(relief="sunken", bg="#C0EBE7")
+        #     btn_general.config(relief="raised", bg="SystemButtonFace")
 
-        def set_general():
-            self.treatment_type_var.set("General")
-            btn_general.config(relief="sunken", bg="#C0EBE7")
-            btn_teeth.config(relief="raised", bg="SystemButtonFace")
+        # def set_general():
+        #     self.treatment_type_var.set("General")
+        #     btn_general.config(relief="sunken", bg="#C0EBE7")
+        #     btn_teeth.config(relief="raised", bg="SystemButtonFace")
 
-        btn_teeth = tk.Button(self.detials, text="Teeth Based", font=("Arial", 12),
-                              relief="sunken", bg="#C0EBE7", command=set_teeth_based)
-        btn_teeth.grid(row=0, column=0, sticky="w", padx=2, pady=2)
+        # btn_teeth = tk.Button(self.detials, text="Teeth Based", font=("Arial", 12),
+        #                       relief="sunken", bg="#C0EBE7", command=set_teeth_based)
+        # btn_teeth.grid(row=0, column=0, sticky="w", padx=2, pady=2)
 
-        btn_general = tk.Button(self.detials, text="General", font=("Arial", 12),
-                                command=set_general)
-        btn_general.grid(row=0, column=1, sticky="w", padx=2, pady=2)
+        # btn_general = tk.Button(self.detials, text="General", font=("Arial", 12),
+        #                         command=set_general)
+        # btn_general.grid(row=0, column=1, sticky="w", padx=2, pady=2)
 
         btn_add = tk.Button(self.detials, text="Add to Treatment", font=("Arial", 11, "bold"),
                     bg="#4CAF50", fg="white", command=lambda: add_to_treatment())
@@ -273,9 +329,12 @@ class Bill:
         self.bill_tooth_no = tk.Entry(self.detials, width=6)
         self.bill_tooth_no.grid(row=1, column=1, padx=2, pady=2, sticky="w")
         tk.Label(self.detials, text="Treatment:", font=("Arial", 10)).grid(row=1, column=2, padx=2, pady=2, sticky="e")
+        
+        self.fee_map = self.get_treatments_and_fees()
+        treatment_list = list(self.fee_map.keys())
+
         self.bill_treatment_combo = ttk.Combobox(self.detials,
-            values=["Scaling", "Filling", "RCT", "Extraction", "Crown", "Bridge",
-                    "Implant", "Denture", "Cleaning", "X-Ray", "Consultation"],
+            values=treatment_list,
             width=15)
         self.bill_treatment_combo.grid(row=1, column=3, padx=2, pady=2, sticky="w")
 
@@ -283,8 +342,22 @@ class Bill:
         self.bill_amount = tk.Entry(self.detials, width=10)
         self.bill_amount.grid(row=2, column=1, padx=2, pady=2, sticky="w")
 
+        def on_treatment_selected(event=None):
+            selected_treatment = self.bill_treatment_combo.get().strip()
+            if selected_treatment in self.fee_map:
+                amount_val = self.fee_map[selected_treatment]
+                self.bill_amount.delete(0, 'end')
+                amount_str = f"{amount_val:.2f}".rstrip('0').rstrip('.') if amount_val % 1 == 0 else f"{amount_val:.2f}"
+                self.bill_amount.insert(0, amount_str)
+
+        self.bill_treatment_combo.bind("<<ComboboxSelected>>", on_treatment_selected)
+        self.bill_treatment_combo.bind("<FocusOut>", on_treatment_selected)
+
         tk.Label(self.detials, text="Doctor:", font=("Arial", 10)).grid(row=2, column=2, padx=2, pady=2, sticky="e")
-        self.bill_doctor_combo = ttk.Combobox(self.detials, values=["Dr. Anoop", "Dr. Terry"], width=12)
+        doctor_names = self.get_doctor_names_from_db()
+        self.bill_doctor_combo = ttk.Combobox(self.detials, values=doctor_names, width=12)
+        if doctor_names:
+            self.bill_doctor_combo.set(doctor_names[0])
         self.bill_doctor_combo.grid(row=2, column=3, padx=2, pady=2, sticky="w")
 
         # Bill tree to show added treatments
@@ -371,6 +444,7 @@ class Bill:
             update_bill_total()
 
         def save_and_go_to_details():
+            doc_notes_val = self.patient_data.get("doctor_notes", "") if hasattr(self, 'patient_data') and self.patient_data else ""
             self.patient_data = {
                 "patientid": self.bill_patientid.get(),
                 "regno": self.bill_regno.get(),
@@ -381,11 +455,18 @@ class Bill:
                 "gender": self.bill_gender.get(),
                 "office": self.bill_office.get(),
                 "residence": self.bill_residence.get(),
-                "email": self.bill_email.get()
+                "email": self.bill_email.get(),
+                "doctor_notes": doc_notes_val
             }
             self.treatments_list = []
             for child in bill_tree.get_children():
-                self.treatments_list.append(bill_tree.item(child)["values"])
+                raw_values = bill_tree.item(child)["values"]
+                tooth = str(raw_values[0]) if len(raw_values) > 0 else ""
+                treatment = str(raw_values[1]) if len(raw_values) > 1 else ""
+                amount = str(raw_values[2]) if len(raw_values) > 2 else "0.00"
+                doctor = str(raw_values[3]) if len(raw_values) > 3 else ""
+                ttype = str(raw_values[4]) if len(raw_values) > 4 else "Teeth Based"
+                self.treatments_list.append((tooth, treatment, amount, "", doctor, ttype))
             d = Doctors(self.app)
             d.patient_data = self.patient_data
             d.treatments_list = self.treatments_list

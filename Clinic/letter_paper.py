@@ -28,6 +28,117 @@ class Letter:
         self.cursor = self.conn.cursor()
         self.cursor.execute("CREATE TABLE IF NOT EXISTS letterpad (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, address TEXT, phone TEXT, email TEXT, website TEXT, logo TEXT)")
         self.conn.commit()
+
+    def get_doctors_from_db(self):
+        default_consultants = [
+            {"id": -1, "name": "Dr.ANOOP KUMAR. B D S", "role": "DENTAL SURGEON", "reg": "Reg.No. 1/32"},
+        ]
+        default_visiting = [
+            {"id": -2, "name": "Dr.JUSTIN MATHEW. MDS",       "role": "Oral & Maxillo Facial Surgeon", "reg": "Reg.No. 5492"},
+            {"id": -3, "name": "Dr.KRISHNA KUMAR. MDS",        "role": "Paedodontist",                  "reg": "Reg.No. 7729"},
+            {"id": -4, "name": "Dr.JOSEPH J PULIKKOTTIL. MDS", "role": "Periodontist & Implantologist", "reg": "Reg.No. 2418"},
+            {"id": -5, "name": "Dr.TERRY THOMAS. MDS",         "role": "Orthodontist",                  "reg": "Reg.No. 4807"},
+            {"id": -6, "name": "Dr.SHIBHU SREEDHAR. MDS",      "role": "Endodontist",                   "reg": "Reg.No. 15619-A"},
+            {"id": -7, "name": "Dr.RENJITH RAJ. MDS",          "role": "Endodontist",                   "reg": "Reg.No. 8171"},
+            {"id": -8, "name": "Dr.SIJO P MATHEW. MDS",        "role": "Endodontist",                   "reg": "Reg.No. 8982"},
+        ]
+        try:
+            db_path = getattr(self.app, "db_path", "dental.db")
+            if not os.path.exists(db_path):
+                script_dir = os.path.dirname(os.path.abspath(__file__))
+                db_path = os.path.join(script_dir, "dental.db")
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            cursor.execute("PRAGMA table_info(Doctors)")
+            cols = [c[1] for c in cursor.fetchall()]
+            if "Is_Consultant" not in cols or "Is_Visiting" not in cols:
+                conn.close()
+                return default_consultants, default_visiting
+
+            cursor.execute("SELECT id, Reg_No, First_Name, Last_Name, Qualification, Designation, Is_Consultant, Is_Visiting FROM Doctors")
+            rows = cursor.fetchall()
+            conn.close()
+
+            consultants = []
+            visiting = []
+            for doc_id, reg, first, last, qual, desig, is_cons, is_vis in rows:
+                fname = f"{first or ''} {last or ''}".strip()
+                full_name = f"Dr. {fname}".strip() if fname else "Dr."
+                if qual:
+                    full_name += f". {qual}"
+                doc_dict = {
+                    "id": doc_id,
+                    "name": full_name,
+                    "role": desig or "",
+                    "reg": f"Reg.No. {reg}" if reg else ""
+                }
+                if is_cons:
+                    consultants.append(doc_dict)
+                if is_vis:
+                    visiting.append(doc_dict)
+
+            if not consultants and not visiting:
+                return default_consultants, default_visiting
+
+            if not consultants:
+                consultants = default_consultants
+            if not visiting:
+                visiting = default_visiting
+
+            return consultants, visiting
+        except Exception:
+            return default_consultants, default_visiting
+
+    def get_clinic_phone_settings(self):
+        default_mobile = "9446046868"
+        default_work = "216858"
+        try:
+            db_path = getattr(self.app, "db_path", "dental.db")
+            if not os.path.exists(db_path):
+                script_dir = os.path.dirname(os.path.abspath(__file__))
+                db_path = os.path.join(script_dir, "dental.db")
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            cursor.execute("SELECT key, value FROM Clinic_Settings WHERE key IN ('clinic_mobile', 'clinic_work', 'clinic_phone', 'clinic_resi')")
+            rows = dict(cursor.fetchall())
+            conn.close()
+
+            mobile = rows.get("clinic_mobile") or rows.get("clinic_phone") or default_mobile
+            work = rows.get("clinic_work") or rows.get("clinic_resi") or default_work
+
+            phone_str = mobile if ("Clinic" in mobile or "clinic" in mobile) else f"Clinic : {mobile}"
+            resi_str = work if ("Resi" in work or "resi" in work) else f"Resi   : {work}"
+            return phone_str, resi_str
+        except Exception:
+            return f"Clinic : {default_mobile}", f"Resi   : {default_work}"
+
+    def get_clinic_hours_setting(self):
+        default_hours = "Clinic Hours : 10:00 AM to 07:00 PM,  Tuesday Holiday"
+        try:
+            db_path = getattr(self.app, "db_path", "dental.db")
+            if not os.path.exists(db_path):
+                script_dir = os.path.dirname(os.path.abspath(__file__))
+                db_path = os.path.join(script_dir, "dental.db")
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            cursor.execute("SELECT key, value FROM Clinic_Settings WHERE key IN ('clinic_open_time', 'clinic_close_time', 'clinic_holiday', 'clinic_hours')")
+            rows = dict(cursor.fetchall())
+            conn.close()
+
+            if "clinic_hours" in rows and rows["clinic_hours"]:
+                return rows["clinic_hours"]
+
+            open_time = rows.get("clinic_open_time", "10:00 AM")
+            close_time = rows.get("clinic_close_time", "07:00 PM")
+            holiday = rows.get("clinic_holiday", "Tuesday Holiday")
+
+            if holiday:
+                holiday_str = holiday if ("Holiday" in holiday or "holiday" in holiday) else f"{holiday} Holiday"
+                return f"Clinic Hours : {open_time} to {close_time},  {holiday_str}"
+            else:
+                return f"Clinic Hours : {open_time} to {close_time}"
+        except Exception:
+            return default_hours
     
 
     def Letter_Pad(self):
@@ -53,22 +164,12 @@ class Letter:
         LOGO_PATH      = os.path.join(SCRIPT_DIR, "Dental_logo.png")
         CLINIC_NAME    = "ANUPAM DENTAL CLINIC"
         CLINIC_ADDRESS = "West Gate Vaikom - 686141"
-        CLINIC_PHONE   = "Clinic : 9446046868"
-        CLINIC_RESI    = "Resi   : 216858"
-        CLINIC_HOURS   = "Clinic Hours : 10:00 AM to 07:00 PM,  Tuesday Holiday"
+        CLINIC_PHONE, CLINIC_RESI = self.get_clinic_phone_settings()
+        CLINIC_HOURS   = self.get_clinic_hours_setting()
 
-        CONSULTANTS = [
-            {"name": "Dr.ANOOP KUMAR. B D S", "role": "DENTAL SURGEON", "reg": "Reg.No. 1/32"},
-        ]
-        VISITING_DOCTORS = [
-            {"name": "Dr.JUSTIN MATHEW. MDS",       "role": "Oral & Maxillo Facial Surgeon", "reg": "Reg.No. 5492"},
-            {"name": "Dr.KRISHNA KUMAR. MDS",        "role": "Paedodontist",                  "reg": "Reg.No. 7729"},
-            {"name": "Dr.JOSEPH J PULIKKOTTIL. MDS", "role": "Periodontist & Implantologist", "reg": "Reg.No. 2418"},
-            {"name": "Dr.TERRY THOMAS. MDS",         "role": "Orthodontist",                  "reg": "Reg.No. 4807"},
-            {"name": "Dr.SHIBHU SREEDHAR. MDS",      "role": "Endodontist",                   "reg": "Reg.No. 15619-A"},
-            {"name": "Dr.RENJITH RAJ. MDS",          "role": "Endodontist",                   "reg": "Reg.No. 8171"},
-            {"name": "Dr.SIJO P MATHEW. MDS",        "role": "Endodontist",                   "reg": "Reg.No. 8982"},
-        ]
+        db_consultants, db_visiting = self.get_doctors_from_db()
+        CONSULTANTS = list(db_consultants)
+        VISITING_DOCTORS = list(db_visiting)
 
         # ==============================================================
         # PDF generation (ReportLab)
@@ -586,55 +687,12 @@ class Letter:
         # ----------------------------------------------------------------------
         CLINIC_NAME = "ANUPAM DENTAL CLINIC"
         CLINIC_ADDRESS = "West Gate Vaikom - 686141"
-        CLINIC_PHONE = "Clinic : 9446046868"
-        CLINIC_RESI = "Resi : 216858"
-        CLINIC_HOURS = "Clinic Hours :10:00 AM to 07:00 PM, Tuesday Holiday"
+        CLINIC_PHONE, CLINIC_RESI = self.get_clinic_phone_settings()
+        CLINIC_HOURS = self.get_clinic_hours_setting()
          
-        CONSULTANTS = [
-            {
-                "name": "Dr.ANOOP KUMAR. B D S",
-                "role": "DENTAL SURGEON",
-                "reg": "Reg.No. 1/32",
-            },
-        ]
-        
-        VISITING_DOCTORS = [
-            {
-                "name": "Dr.JUSTIN MATHEW. MDS",
-                "role": "Oral & Maxillo Facial Surgeon",
-                "reg": "Reg.No. 5492",
-            },
-            {
-                "name": "Dr.KRISHNA KUMAR. MDS",
-                "role": "Paedodontist",
-                "reg": "Reg.No. 7729",
-            },
-            {
-                "name": "Dr.JOSEPH J PULIKKOTTIL. MDS",
-                "role": "Periodontist & Implantologist",
-                "reg": "Reg.No. 2418",
-            },
-            {
-                "name": "Dr.TERRY THOMAS. MDS",
-                "role": "Orthodontist",
-                "reg": "Reg.No. 4807",
-            },
-            {
-                "name": "Dr.SHIBHU SREEDHAR. MDS",
-                "role": "Endodontist",
-                "reg": "Reg.No. 15619-A",
-            },
-            {
-                "name": "Dr.RENJITH RAJ. MDS",
-                "role": "Endodontist",
-                "reg": "Reg.No. 8171",
-            },
-            {
-                "name": "Dr.SIJO P MATHEW. MDS",
-                "role": "Endodontist",
-                "reg": "Reg.No. 8982",
-            },
-        ]
+        db_consultants, db_visiting = self.get_doctors_from_db()
+        CONSULTANTS = list(db_consultants)
+        VISITING_DOCTORS = list(db_visiting)
         
         
         # ----------------------------------------------------------------------
@@ -1058,9 +1116,8 @@ class Letter:
         LOGO_PATH      = os.path.join(SCRIPT_DIR, "Dental_logo.png")
         CLINIC_NAME    = "ANUPAM DENTAL CLINIC"
         CLINIC_ADDRESS = "West Gate Vaikom - 686141"
-        CLINIC_PHONE   = "Clinic : 9446046868"
-        CLINIC_RESI    = "Resi   : 216858"
-        CLINIC_HOURS   = "Clinic Hours : 10:00 AM to 07:00 PM,  Tuesday Holiday"
+        CLINIC_PHONE, CLINIC_RESI = self.get_clinic_phone_settings()
+        CLINIC_HOURS   = self.get_clinic_hours_setting()
 
         # ==============================================================
         # PDF generation (ReportLab)

@@ -72,9 +72,17 @@ class Personal:
                     City TEXT,
                     Phone TEXT,
                     Mobile TEXT,
-                    Email TEXT
+                    Email TEXT,
+                    Is_Consultant INTEGER DEFAULT 0,
+                    Is_Visiting INTEGER DEFAULT 0
                 )
             ''')
+            cursor.execute("PRAGMA table_info(Doctors)")
+            columns = [col[1] for col in cursor.fetchall()]
+            if "Is_Consultant" not in columns:
+                cursor.execute("ALTER TABLE Doctors ADD COLUMN Is_Consultant INTEGER DEFAULT 0")
+            if "Is_Visiting" not in columns:
+                cursor.execute("ALTER TABLE Doctors ADD COLUMN Is_Visiting INTEGER DEFAULT 0")
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS Labs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -155,6 +163,30 @@ class Personal:
                 "INSERT OR IGNORE INTO Clinic_Settings (key, value) VALUES (?, ?)",
                 ("currency_symbol", "₹"),
             )
+            cursor.execute(
+                "INSERT OR IGNORE INTO Clinic_Settings (key, value) VALUES (?, ?)",
+                ("clinic_mobile", "9446046868"),
+            )
+            cursor.execute(
+                "INSERT OR IGNORE INTO Clinic_Settings (key, value) VALUES (?, ?)",
+                ("clinic_telephone", ""),
+            )
+            cursor.execute(
+                "INSERT OR IGNORE INTO Clinic_Settings (key, value) VALUES (?, ?)",
+                ("clinic_work", "216858"),
+            )
+            cursor.execute(
+                "INSERT OR IGNORE INTO Clinic_Settings (key, value) VALUES (?, ?)",
+                ("clinic_open_time", "10:00 AM"),
+            )
+            cursor.execute(
+                "INSERT OR IGNORE INTO Clinic_Settings (key, value) VALUES (?, ?)",
+                ("clinic_close_time", "07:00 PM"),
+            )
+            cursor.execute(
+                "INSERT OR IGNORE INTO Clinic_Settings (key, value) VALUES (?, ?)",
+                ("clinic_holiday", "Tuesday Holiday"),
+            )
             cursor.execute("SELECT COUNT(*) FROM Treatment_Fees")
             if cursor.fetchone()[0] == 0:
                 defaults = [
@@ -216,14 +248,20 @@ class Personal:
             entry.grid(row=row, column=col_ent, padx=(0, 10), pady=4, sticky="w")
             setattr(self, attr, entry)
 
-        # ── Treeview ──────────────────────────────────────────────────────────────
-        tree_frame = tk.Frame(self.app.workspace)
-        tree_frame.pack(padx=10, pady=4, fill="both", expand=True)
+        self.dd_is_consultant = tk.BooleanVar()
+        self.dd_is_visiting = tk.BooleanVar()
+
+        # ── Treeview Container & Right Side Panel ──────────────────────────────────
+        tree_outer = tk.Frame(self.app.workspace)
+        tree_outer.pack(padx=10, pady=4, fill="both", expand=True)
+
+        tree_frame = tk.Frame(tree_outer)
+        tree_frame.pack(side="left", fill="both", expand=True)
 
         col_doctor = ("ID", "Reg No", "First Name", "Last Name", "Sex",
                       "Qualification", "Designation", "Address", "City",
-                      "Phone", "Mobile", "Email")
-        col_widths  = (40, 60, 90, 90, 50, 100, 100, 120, 80, 90, 90, 120)
+                      "Phone", "Mobile", "Email", "Consultant", "Visiting")
+        col_widths  = (40, 60, 90, 90, 50, 100, 100, 120, 80, 90, 90, 120, 75, 75)
 
         self.doctor_tree = ttk.Treeview(tree_frame, columns=col_doctor,
                                         show="headings", height=12)
@@ -242,6 +280,18 @@ class Personal:
         hsb.grid(row=1, column=0, sticky="ew")
         tree_frame.grid_rowconfigure(0, weight=1)
         tree_frame.grid_columnconfigure(0, weight=1)
+
+        # ── Right Side Panel for Consultants / Visiting Checkboxes ───────────────
+        right_panel = tk.LabelFrame(tree_outer, text="Doctor Type", font=("Arial", 10, "bold"), bd=2, relief="groove")
+        right_panel.pack(side="right", fill="y", padx=(10, 0), pady=0, ipadx=10, ipady=10)
+
+        self.sel_doc_label = tk.Label(right_panel, text="Select a doctor", font=("Arial", 9, "bold"), fg="#1565C0", wraplength=140)
+        self.sel_doc_label.pack(pady=(10, 15))
+
+        tk.Checkbutton(right_panel, text="Consultant Doctor", variable=self.dd_is_consultant,
+                       font=("Arial", 9, "bold"), command=self._on_category_toggle).pack(anchor="w", pady=6, padx=5)
+        tk.Checkbutton(right_panel, text="Visiting Doctor", variable=self.dd_is_visiting,
+                       font=("Arial", 9, "bold"), command=self._on_category_toggle).pack(anchor="w", pady=6, padx=5)
 
         # Bind click → fill form for editing
         self.doctor_tree.bind("<<TreeviewSelect>>", self._on_doctor_select)
@@ -266,6 +316,30 @@ class Personal:
 
     # ── Doctor helpers ────────────────────────────────────────────────────────────
 
+    def _on_category_toggle(self):
+        if not self._selected_doctor_id:
+            return
+        is_cons = 1 if self.dd_is_consultant.get() else 0
+        is_vis = 1 if self.dd_is_visiting.get() else 0
+        try:
+            conn = self.get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE Doctors SET Is_Consultant=?, Is_Visiting=? WHERE id=?",
+                (is_cons, is_vis, self._selected_doctor_id)
+            )
+            conn.commit()
+            conn.close()
+            sel = self.doctor_tree.selection()
+            if sel:
+                item_vals = list(self.doctor_tree.item(sel[0])["values"])
+                if len(item_vals) >= 14:
+                    item_vals[12] = "Yes" if is_cons else "No"
+                    item_vals[13] = "Yes" if is_vis else "No"
+                    self.doctor_tree.item(sel[0], values=item_vals)
+        except Exception as e:
+            print(f"Error updating doctor category: {e}")
+
     def _doctor_form_values(self):
         return (
             self.dd_reg_no.get().strip(),
@@ -279,6 +353,8 @@ class Personal:
             self.dd_phone.get().strip(),
             self.dd_mobile.get().strip(),
             self.dd_email.get().strip(),
+            1 if self.dd_is_consultant.get() else 0,
+            1 if self.dd_is_visiting.get() else 0,
         )
 
     def _clear_doctor_form(self):
@@ -286,6 +362,12 @@ class Personal:
                      "dd_qualification", "dd_designation", "dd_address",
                      "dd_city", "dd_phone", "dd_mobile", "dd_email"):
             getattr(self, attr).delete(0, tk.END)
+        if hasattr(self, "dd_is_consultant"):
+            self.dd_is_consultant.set(False)
+        if hasattr(self, "dd_is_visiting"):
+            self.dd_is_visiting.set(False)
+        if hasattr(self, "sel_doc_label"):
+            self.sel_doc_label.config(text="Select a doctor")
         self._selected_doctor_id = None
         if hasattr(self, "doctor_tree"):
             for sel in self.doctor_tree.selection():
@@ -299,10 +381,13 @@ class Personal:
             cursor = conn.cursor()
             cursor.execute(
                 "SELECT id, Reg_No, First_Name, Last_Name, Sex, Qualification, "
-                "Designation, Address, City, Phone, Mobile, Email FROM Doctors"
+                "Designation, Address, City, Phone, Mobile, Email, Is_Consultant, Is_Visiting FROM Doctors"
             )
             for row in cursor.fetchall():
-                self.doctor_tree.insert("", "end", values=row)
+                row_list = list(row)
+                row_list[12] = "Yes" if row_list[12] else "No"
+                row_list[13] = "Yes" if row_list[13] else "No"
+                self.doctor_tree.insert("", "end", values=row_list)
             conn.close()
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load doctors: {e}")
@@ -318,8 +403,8 @@ class Personal:
             cursor.execute(
                 "INSERT INTO Doctors "
                 "(Reg_No, First_Name, Last_Name, Sex, Qualification, "
-                "Designation, Address, City, Phone, Mobile, Email) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "Designation, Address, City, Phone, Mobile, Email, Is_Consultant, Is_Visiting) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 vals
             )
             conn.commit()
@@ -340,7 +425,7 @@ class Personal:
             cursor.execute(
                 "UPDATE Doctors SET Reg_No=?, First_Name=?, Last_Name=?, Sex=?, "
                 "Qualification=?, Designation=?, Address=?, City=?, Phone=?, "
-                "Mobile=?, Email=? WHERE id=?",
+                "Mobile=?, Email=?, Is_Consultant=?, Is_Visiting=? WHERE id=?",
                 vals + (self._selected_doctor_id,)
             )
             conn.commit()
@@ -377,10 +462,20 @@ class Personal:
         attrs = ("dd_reg_no", "dd_first_name", "dd_last_name", "dd_sex",
                  "dd_qualification", "dd_designation", "dd_address",
                  "dd_city", "dd_phone", "dd_mobile", "dd_email")
-        for attr, val in zip(attrs, values[1:]):
+        for attr, val in zip(attrs, values[1:12]):
             widget = getattr(self, attr)
             widget.delete(0, tk.END)
             widget.insert(0, str(val) if val else "")
+        fname = values[2] if len(values) > 2 else ""
+        lname = values[3] if len(values) > 3 else ""
+        if hasattr(self, "sel_doc_label"):
+            self.sel_doc_label.config(text=f"Dr. {fname} {lname}".strip())
+        is_cons = values[12] if len(values) > 12 else "No"
+        is_vis = values[13] if len(values) > 13 else "No"
+        if hasattr(self, "dd_is_consultant"):
+            self.dd_is_consultant.set(True if is_cons in (1, "1", "Yes") else False)
+        if hasattr(self, "dd_is_visiting"):
+            self.dd_is_visiting.set(True if is_vis in (1, "1", "Yes") else False)
 
     def Letter_Pad(self):
         Letter(self.app, mode="letter")
@@ -394,44 +489,47 @@ class Personal:
     def Change_Telephone(self):
         win = tk.Toplevel(self.app.root)
         win.title("Change Telephone")
-        height=170
-        width=400
-        x=(win.winfo_screenwidth()-width)//2
-        y=(win.winfo_screenheight()-height)//2
+        height = 170
+        width = 400
+        x = (win.winfo_screenwidth() - width) // 2
+        y = (win.winfo_screenheight() - height) // 2
         win.geometry(f"{width}x{height}+{x}+{y}") 
-        lbl1 = tk.Label(win, text="Telephone No", font=("Arial", 11, "bold"), fg="#2C3E50")
+        
+        lbl1 = tk.Label(win, text="Mobile No", font=("Arial", 11, "bold"), fg="#2C3E50")
         lbl1.grid(row=1, column=0, pady=6)
-        txt1 = tk.Entry(win, width=12, justify="center")
+        txt1 = tk.Entry(win, width=30, justify="center")
         txt1.grid(row=1, column=1, pady=6)
-        lbl2 = tk.Label(win, text="Mobile No", font=("Arial", 11, "bold"), fg="#2C3E50")
-        lbl2.grid(row=2, column=0, pady=6)
-        txt2 = tk.Entry(win, width=12, justify="center")
-        txt2.grid(row=2, column=1, pady=6)
-        lbl2 = tk.Label(win, text="Work No", font=("Arial", 11, "bold"), fg="#2C3E50")
-        lbl2.grid(row=3, column=0, pady=6)
-        txt3 = tk.Entry(win, width=12, justify="center")
-        txt3.grid(row=3, column=1, pady=6)
-        btn_frame = tk.Frame(win)
-        btn_frame.grid(row=5,column=1, pady=6)
-        btn1 = tk.Button(btn_frame, text="Update", font=("Arial", 10), width=10, command=lambda: self._update_telephone(txt1.get(), txt2.get(), txt3.get(), win))
-        btn1.grid(row=5,column=0, padx=6)
-        btn2 = tk.Button(btn_frame, text="Close", font=("Arial", 10), width=10, command=win.destroy)
-        btn2.grid(row=5,column=1, padx=6)
+        txt1.insert(0, self._get_clinic_setting("clinic_mobile", "9446046868"))
 
-    def _update_telephone(self, old_telephone, new_telephone, workno, win):
-        if not old_telephone or not new_telephone:
-            messagebox.showwarning("Warning", "Please enter both old and new telephone numbers.")
-            return
+        lbl2 = tk.Label(win, text="Telephone No", font=("Arial", 11, "bold"), fg="#2C3E50")
+        lbl2.grid(row=2, column=0, pady=6)
+        txt2 = tk.Entry(win, width=30, justify="center")
+        txt2.grid(row=2, column=1, pady=6)
+        txt2.insert(0, self._get_clinic_setting("clinic_telephone", ""))
+
+        lbl3 = tk.Label(win, text="Work No", font=("Arial", 11, "bold"), fg="#2C3E50")
+        lbl3.grid(row=3, column=0, pady=6)
+        txt3 = tk.Entry(win, width=30, justify="center")
+        txt3.grid(row=3, column=1, pady=6)
+        txt3.insert(0, self._get_clinic_setting("clinic_work", "216858"))
+
+        btn_frame = tk.Frame(win)
+        btn_frame.grid(row=5, column=1, pady=6)
+        btn1 = tk.Button(btn_frame, text="Update", font=("Arial", 10), width=10, 
+                         command=lambda: self._update_telephone(txt1.get().strip(), txt2.get().strip(), txt3.get().strip(), win))
+        btn1.grid(row=5, column=0, padx=6)
+        btn2 = tk.Button(btn_frame, text="Close", font=("Arial", 10), width=10, command=win.destroy)
+        btn2.grid(row=5, column=1, padx=6)
+
+    def _update_telephone(self, mobile_no, telephone_no, work_no, win):
         try:
-            conn = self.get_db_connection()
-            cursor = conn.cursor()
-            cursor.execute("UPDATE Clinic_Settings SET value=? WHERE key=?", (new_telephone, old_telephone))
-            conn.commit()
-            conn.close()
-            messagebox.showinfo("Success", "Telephone number updated successfully.")
+            self._set_clinic_setting("clinic_mobile", mobile_no)
+            self._set_clinic_setting("clinic_telephone", telephone_no)
+            self._set_clinic_setting("clinic_work", work_no)
+            messagebox.showinfo("Success", "Telephone/Mobile numbers updated successfully.")
             win.destroy()
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to update telephone number: {e}")
+            messagebox.showerror("Error", f"Failed to update telephone numbers: {e}")
 
     def _get_clinic_setting(self, key, default=""):
         try:
@@ -1965,22 +2063,45 @@ class Personal:
 
     def Clinic_Timing(self):
         win = tk.Toplevel(self.app.root)
-        win.title("Appointment Edit")
-        width=350
-        height=200
-        x=(win.winfo_screenwidth()-width)//2
-        y=(win.winfo_screenheight()-height)//2
+        win.title("Clinic Timing & Holiday")
+        width = 400
+        height = 200
+        x = (win.winfo_screenwidth() - width) // 2
+        y = (win.winfo_screenheight() - height) // 2
         win.geometry(f"{width}x{height}+{x}+{y}") 
 
-        open_time = tk.Label(win,text="Opening Time:",font=('Arial',12),width=13)
-        open_time.grid(row=0, column=0)
-        open= tk.Entry(win,width=15).grid(row=0,column=1)
-        close_time = tk.Label(win,text="Closing Time:",font=('Arial',12))
-        close_time.grid(row=1, column=0)
-        close = tk.Entry(win,width=15).grid(row=1,column=1)
-        hoilday = tk.Label(win,text="Hoilday",font=("Arial",12)).grid(row=2,column=0)
-        hoil = tk.Entry(win,width=30).grid(row=2,column=1)
-        ok = tk.Button(win,text="Ok",font=("Arial",12)).grid(row=5,column=1)
+        tk.Label(win, text="Opening Time:", font=('Arial', 11, 'bold')).grid(row=0, column=0, padx=10, pady=10, sticky="e")
+        open_entry = tk.Entry(win, font=('Arial', 11), width=20)
+        open_entry.grid(row=0, column=1, padx=10, pady=10, sticky="w")
+        open_entry.insert(0, self._get_clinic_setting("clinic_open_time", "10:00 AM"))
+
+        tk.Label(win, text="Closing Time:", font=('Arial', 11, 'bold')).grid(row=1, column=0, padx=10, pady=10, sticky="e")
+        close_entry = tk.Entry(win, font=('Arial', 11), width=20)
+        close_entry.grid(row=1, column=1, padx=10, pady=10, sticky="w")
+        close_entry.insert(0, self._get_clinic_setting("clinic_close_time", "07:00 PM"))
+
+        tk.Label(win, text="Holiday:", font=('Arial', 11, 'bold')).grid(row=2, column=0, padx=10, pady=10, sticky="e")
+        holiday_entry = tk.Entry(win, font=('Arial', 11), width=20)
+        holiday_entry.grid(row=2, column=1, padx=10, pady=10, sticky="w")
+        holiday_entry.insert(0, self._get_clinic_setting("clinic_holiday", "Tuesday Holiday"))
+
+        btn_frame = tk.Frame(win)
+        btn_frame.grid(row=3, column=0, columnspan=2, pady=15)
+
+        tk.Button(btn_frame, text="Ok", font=("Arial", 10, "bold"), width=10, bg="#27AE60", fg="white",
+                  command=lambda: self._save_clinic_timing(open_entry.get().strip(), close_entry.get().strip(), holiday_entry.get().strip(), win)).pack(side="left", padx=10)
+        tk.Button(btn_frame, text="Close", font=("Arial", 10), width=10,
+                  command=win.destroy).pack(side="left", padx=10)
+
+    def _save_clinic_timing(self, open_time, close_time, holiday, win):
+        try:
+            self._set_clinic_setting("clinic_open_time", open_time)
+            self._set_clinic_setting("clinic_close_time", close_time)
+            self._set_clinic_setting("clinic_holiday", holiday)
+            messagebox.showinfo("Success", "Clinic timing and holiday updated successfully.")
+            win.destroy()
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to update clinic timing: {e}")
 
     
     

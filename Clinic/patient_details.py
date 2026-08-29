@@ -78,6 +78,10 @@ class Patient_Details:
         self.f_email = tk.Entry(form_lf, width=18)
         self.f_email.grid(row=6, column=1, columnspan=2, padx=4, pady=2, sticky="we")
 
+        tk.Label(form_lf, text="Notes:", font=("Arial", 8)).grid(row=7, column=0, padx=4, pady=2, sticky="e")
+        self.f_notes = tk.Text(form_lf, height=3, width=24)
+        self.f_notes.grid(row=7, column=1, columnspan=2, padx=4, pady=2, sticky="we")
+
         # ── Action Buttons ────────────────────────────
         btn_frame = tk.Frame(left_frame)
         btn_frame.pack(fill="x", padx=6, pady=4)
@@ -202,10 +206,15 @@ class Patient_Details:
 
     # ── Populate form from a DB row ───────────────
     def _populate_form(self, row):
-        def _set(entry, val):
-            entry.delete(0, "end")
+        def _set(widget, val):
+            if isinstance(widget, tk.Text):
+                widget.delete("1.0", "end")
+                if val:
+                    widget.insert("1.0", str(val))
+                return
+            widget.delete(0, "end")
             if val:
-                entry.insert(0, str(val))
+                widget.insert(0, str(val))
 
         pid = row[0]
         _set(self.f_patientid, str(pid))
@@ -316,9 +325,11 @@ class Patient_Details:
         for widget in (
             self.f_patientid, self.f_regno, self.f_patientname,
             self.f_address1, self.f_address2, self.f_age,
-            self.f_mobile1, self.f_mobile2, self.f_email, self.f_notes
+            self.f_mobile1, self.f_mobile2, self.f_email
         ):
             widget.delete(0, "end")
+        if hasattr(self, 'f_notes'):
+            self.f_notes.delete("1.0", "end")
         self.f_gender.set("")
         self.f_patientname.focus()
 
@@ -328,6 +339,7 @@ class Patient_Details:
         if not name:
             messagebox.showwarning("Validation", "Patient Name is required.")
             return
+        notes_text = self.f_notes.get("1.0", "end-1c").strip() if hasattr(self, 'f_notes') else ""
         try:
             conn = get_db_connection(self.app)
             cursor = conn.cursor()
@@ -345,7 +357,7 @@ class Patient_Details:
                     self.f_mobile1.get().strip(),
                     self.f_mobile2.get().strip(),
                     self.f_email.get().strip(),
-                    self.f_notes.get().strip(),
+                    notes_text,
                 )
             )
             conn.commit()
@@ -368,6 +380,7 @@ class Patient_Details:
         if not name:
             messagebox.showwarning("Validation", "Patient Name is required.")
             return
+        notes_text = self.f_notes.get("1.0", "end-1c").strip() if hasattr(self, 'f_notes') else ""
         try:
             pid = int(pid_str)
             conn = get_db_connection(self.app)
@@ -386,7 +399,7 @@ class Patient_Details:
                     self.f_mobile1.get().strip(),
                     self.f_mobile2.get().strip(),
                     self.f_email.get().strip(),
-                    self.f_notes.get().strip(),
+                    notes_text,
                     pid,
                 )
             )

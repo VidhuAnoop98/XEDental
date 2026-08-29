@@ -5,9 +5,10 @@ import sqlite3
 import os
 from bill import Bill
 from doctors_d import Doctors
-from letter_paper import Letter
 from card import Card
+from letter_paper import Letter
 from lab import Lab
+
 
 def get_db_connection(app=None):
     if app and hasattr(app, "get_db_connection"):
@@ -32,17 +33,9 @@ def init_db(app=None):
             Date TEXT,
             Time TEXT,
             Email_id TEXT,
-            Notes TEXT,
-            Doctor_Name TEXT
+            Notes TEXT
         )
     ''')
-    try:
-        cursor.execute("PRAGMA table_info(Appointments)")
-        cols = [c[1] for c in cursor.fetchall()]
-        if "Doctor_Name" not in cols:
-            cursor.execute("ALTER TABLE Appointments ADD COLUMN Doctor_Name TEXT")
-    except Exception:
-        pass
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS Bills (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -52,8 +45,7 @@ def init_db(app=None):
             Date TEXT,
             Total_Amount REAL,
             Balance_Due REAL,
-            Comments TEXT,
-            Doctor_Notes TEXT
+            Comments TEXT
         )
     ''')
     cursor.execute('''
@@ -86,16 +78,16 @@ class Registration:
         self.app = app
         init_db(app)
         self.app.clear_workspace()
-        self.app.workspace = tk.Frame(app.root, bd=3, relief="solid")
+        self.app.workspace = tk.Frame(self.app.root, bd=3, relief="solid")
         self.app.workspace.pack(padx=10, pady=10, fill="both", expand=True)
 
         buttons = [
             ("Appointments", self.registration_workspace),
             ("Preview Today's Appointments", self.todayapp),
-            ("Lab Work",self.lab),
+            ("Lab Work", self.lab),
         ]
         for i, (text, command) in enumerate(buttons):
-            btn = tk.Button(app.workspace, text=text, font=('Arial', 11), width=22, command=command)
+            btn = tk.Button(self.app.workspace, text=text, font=('Arial', 11), width=22, command=command)
             btn.place(x=40, y=280 + i * 45)
 
 
@@ -137,29 +129,24 @@ class Registration:
         right_frame.pack(side="left", fill="both", expand=True, padx=5)
 
         reg=tk.Frame(left_frame)
-        reg.pack(fill="both", expand=True,pady=5)
+        reg.pack(fill="both",pady=5)
 
         # --- Row 0: Doctor selection ---
         Doctor_name = tk.Label(reg, text="Doctor Name:", font=('Arial', 8))
         Doctor_name.grid(row=0, column=0, padx=(20, 5), pady=10, sticky='e')
         self.Doctor_var = tk.StringVar()
         doctor_names = get_doctor_names_from_db(self.app)
-        self.Doctor_combo = ttk.Combobox(reg, textvariable=self.Doctor_var, values=doctor_names, state="readonly", font=('Arial', 8), width=15)
+
+        def refresh_reg_doctors():
+            latest = get_doctor_names_from_db(self.app)
+            self.Doctor_combo['values'] = latest
+            if latest and not self.Doctor_var.get():
+                self.Doctor_combo.set(latest[0])
+
+        self.Doctor_combo = ttk.Combobox(reg, textvariable=self.Doctor_var, values=doctor_names, state="readonly", font=('Arial', 8), width=15, postcommand=refresh_reg_doctors)
         if doctor_names:
             self.Doctor_combo.set(doctor_names[0])
         self.Doctor_combo.grid(row=0, column=1, padx=(0, 20), pady=10, sticky='w')
-
-        def on_doctor_combo_select(event=None):
-            selected_doc = self.Doctor_var.get()
-            if hasattr(self, 'patient_tree') and self.patient_tree:
-                selected_item = self.patient_tree.focus()
-                if selected_item:
-                    current_vals = list(self.patient_tree.item(selected_item)["values"])
-                    if len(current_vals) >= 5:
-                        current_vals[4] = selected_doc
-                        self.patient_tree.item(selected_item, values=tuple(current_vals))
-
-        self.Doctor_combo.bind("<<ComboboxSelected>>", on_doctor_combo_select)
 
         # --- Row 1: Patient Details ---
         Patient_Name = tk.Label(reg, text="Patient Name:", font=('Arial',8))
@@ -211,13 +198,13 @@ class Registration:
         self.entry_mobile2.grid(row=3, column=3, padx=(0, 20), pady=10, sticky='w')
 
 
-        pat = tk.Frame(middle_frame)
-        pat.pack(fill="both", expand=True,pady=5)
+        pat = tk.LabelFrame(middle_frame, text="Patient Details", font=("Arial", 10, "bold"))
+        pat.pack(fill="both", pady=1)
         # Row 0: Patient ID & Reg No
-        self.bill_patientid = tk.Entry(pat, justify="center", width=12)
+        self.bill_patientid = tk.Entry(pat, justify="center", width=18)
         self.bill_patientid.grid(row=0, column=0, padx=5, pady=2, sticky="w")
 
-        self.bill_regno = tk.Entry(pat, justify="center", width=12)
+        self.bill_regno = tk.Entry(pat, justify="center", width=18)
         self.bill_regno.grid(row=0, column=1, padx=5, pady=2, sticky="w")
 
         # Row 1: Patient Name & Address 1
@@ -232,11 +219,11 @@ class Registration:
         self.bill_address2.grid(row=2, column=0, columnspan=2, padx=5, pady=2, sticky="we")
 
         # Row 3: Age & Sex
-        tk.Label(pat, text="Age:", font=("Arial", 10, "bold")).grid(row=3, column=0, sticky="w", padx=5, pady=2)
+        tk.Label(pat, text="Age:", font=("Arial", 8)).grid(row=3, column=0, sticky="w", padx=5, pady=2)
         self.bill_age = tk.Entry(pat, width=6)
         self.bill_age.grid(row=4, column=0, sticky="w", padx=5, pady=2)
 
-        tk.Label(pat, text="Sex:", font=("Arial", 10, "bold")).grid(row=3, column=1, sticky="w", padx=5, pady=2)
+        tk.Label(pat, text="Sex:", font=("Arial", 8)).grid(row=3, column=1, sticky="w", padx=5, pady=2)
         self.bill_gender = ttk.Combobox(pat, values=["Male", "Female"], state="readonly", width=10)
         self.bill_gender.grid(row=4, column=1, sticky="w", padx=5, pady=2)
 
@@ -333,8 +320,6 @@ class Registration:
                 treatment_val, doc_val = get_patient_latest_treatment(self.app, row[0])
                 if doc_val:
                     self.Doctor_var.set(doc_val)
-                elif len(row) > 13 and row[13]:
-                    self.Doctor_var.set(row[13])
                 self.load_patient_accounts(row[0])
                 self.load_patient_treatments(row[0])
             else:
@@ -347,7 +332,6 @@ class Registration:
 
         # --- Save Function ---
         def save():
-            selected_doc = self.Doctor_var.get().strip()
             appointments(
                 self.app,
                 self.entry_name.get(),
@@ -361,8 +345,7 @@ class Registration:
                 self.entry_date.get(),
                 self.entry_time.get(),
                 self.entry_email.get(),
-                self.entry_notes.get("1.0", "end-1c"),
-                selected_doc
+                self.doctor_notes.get("1.0", "end-1c") if hasattr(self, 'doctor_notes') and self.doctor_notes else "",
             )
             
             # Retrieve last insert ID to populate patient_data
@@ -378,7 +361,6 @@ class Registration:
                 pid_str = "1"
                 reg_str = "REG-0001"
 
-            # Store entered patient details
             self.patient_data = {
                 "patientid": pid_str,
                 "regno": reg_str,
@@ -413,19 +395,11 @@ class Registration:
             self.bill_email.delete(0, 'end')
             self.bill_email.insert(0, self.patient_data["email"])
 
-            # Refresh patient tree (only today's appointments)
+            # Refresh patient tree
             for child in patient_tree.get_children():
                 patient_tree.delete(child)
             for row in get_all_appointments(self.app):
-                app_date = row[9] if len(row) > 9 and row[9] else ""
-                if app_date and not is_today_date(app_date):
-                    continue
-                treatment, doc = get_patient_latest_treatment(self.app, row[0])
-                if not doc and len(row) > 13 and row[13]:
-                    doc = row[13]
-                if not doc:
-                    doc = selected_doc
-                patient_tree.insert("", "end", values=(row[0], row[1], row[5], treatment, doc))
+                patient_tree.insert("", "end", values=(row[0], row[1], row[5], "", ""))
 
             # Refresh history tree
             for child in history_tree.get_children():
@@ -467,11 +441,10 @@ class Registration:
         # tree_h_scrolly2 = ttk.Scrollbar(treat, orient="horizontal", command=treatment_tree.yview)
         # tree_h_scrolly2.pack(side="bottom", fill="x")
         # treatment_tree.configure(xscrollcommand=tree_h_scrolly2.set)
-
         notes=tk.Frame(right_frame)
         notes.pack(fill="both",expand="True",pady=10)
-        self.entry_notes = tk.Text(notes, font=('Arial', 12), height=4, width=25)
-        self.entry_notes.pack(side="left",pady=10, padx=10, fill="both", expand=True)
+        self.doctor_notes = tk.Text(notes, font=('Arial', 12), height=4, width=25)
+        self.doctor_notes.pack(side="left",pady=10, padx=10, fill="both", expand=True)
 
         med=tk.Frame(right_frame)
         med.pack(fill="both", expand=True,pady=5) 
@@ -523,7 +496,6 @@ class Registration:
         # --- Bottom Frame: Patient Appointment Tree ---
         columns = ("Patient ID", "Patient Name", "Address 1", "Treatment", "Doctor Name")
         patient_tree = ttk.Treeview(app, columns=columns, show="headings", height=12)
-        self.patient_tree = patient_tree
 
         scroll = ttk.Scrollbar(app, orient="vertical", command=patient_tree.yview)
         scroll.pack(side="right", fill="y")
@@ -536,13 +508,8 @@ class Registration:
             patient_tree.column(col, width=100)
 
         for row in get_all_appointments(self.app):
-            app_date = row[9] if len(row) > 9 and row[9] else ""
-            if app_date and not is_today_date(app_date):
-                continue
-            treatment, doc = get_patient_latest_treatment(self.app, row[0])
-            if not doc and len(row) > 13 and row[13]:
-                doc = row[13]
-            patient_tree.insert("", "end", values=(row[0], row[1], row[5], treatment, doc))
+            # treatment, doc = get_patient_latest_treatment(self.app, row[0])
+            patient_tree.insert("", "end", values=(row[0], row[1], row[5]))
 
         history=tk.Frame(middle_frame)
         history.pack(fill="both",expand="True",pady=10)
@@ -603,30 +570,6 @@ class Registration:
                 self.entry_mobile1.insert(0, row[7] if row[7] else "")
                 self.entry_mobile2.delete(0, 'end')
                 self.entry_mobile2.insert(0, row[8] if row[8] else "")
-                self.entry_notes.delete("1.0", "end")
-                self.entry_notes.insert("1.0", row[12] if row[12] else "")
-                
-                # Populate billing form
-                self.bill_patientid.delete(0, 'end')
-                self.bill_patientid.insert(0, self.format_patient_id(str(row[0])))
-                self.bill_regno.delete(0, 'end')
-                self.bill_regno.insert(0, f"REG-{row[0]:04d}")
-                self.bill_patientname.delete(0, 'end')
-                self.bill_patientname.insert(0, row[1] if row[1] else "")
-                self.bill_age.delete(0, 'end')
-                self.bill_age.insert(0, row[2] if row[2] else "")
-                self.bill_gender.set(row[3] if row[3] else "")
-                self.bill_address1.delete(0, 'end')
-                self.bill_address1.insert(0, row[5] if row[5] else "")
-                self.bill_address2.delete(0, 'end')
-                self.bill_address2.insert(0, row[6] if row[6] else "")
-                self.bill_office.delete(0, 'end')
-                self.bill_office.insert(0, row[7] if row[7] else "")
-                self.bill_residence.delete(0, 'end')
-                self.bill_residence.insert(0, row[8] if row[8] else "")
-                self.bill_email.delete(0, 'end')
-                self.bill_email.insert(0, row[11] if row[11] else "")
-                
                 self.patient_data = {
                     "patientid": str(row[0]),
                     "regno": f"REG-{row[0]:04d}",
@@ -639,70 +582,34 @@ class Registration:
                     "residence": row[8] if row[8] else "",
                     "email": row[11] if row[11] else ""
                 }
+                # Populate pat frame (Patient Details)
+                self.bill_patientid.delete(0, 'end')
+                self.bill_patientid.insert(0, str(row[0]))
+                self.bill_regno.delete(0, 'end')
+                self.bill_regno.insert(0, f"REG-{row[0]:04d}")
+                self.bill_patientname.delete(0, 'end')
+                self.bill_patientname.insert(0, row[1] if row[1] else "")
+                self.bill_address1.delete(0, 'end')
+                self.bill_address1.insert(0, row[5] if row[5] else "")
+                self.bill_address2.delete(0, 'end')
+                self.bill_address2.insert(0, row[6] if row[6] else "")
+                self.bill_age.delete(0, 'end')
+                self.bill_age.insert(0, row[2] if row[2] else "")
+                self.bill_gender.set(row[3] if row[3] else "")
+                self.bill_office.delete(0, 'end')
+                self.bill_office.insert(0, row[7] if row[7] else "")
+                self.bill_residence.delete(0, 'end')
+                self.bill_residence.insert(0, row[8] if row[8] else "")
+                self.bill_email.delete(0, 'end')
+                self.bill_email.insert(0, row[11] if row[11] else "")
                 treatment_val, doc_val = get_patient_latest_treatment(self.app, row[0])
                 if doc_val:
                     self.Doctor_var.set(doc_val)
-                elif len(row) > 13 and row[13]:
-                    self.Doctor_var.set(row[13])
-                elif len(values) > 4 and values[4]:
-                    self.Doctor_var.set(values[4])
                 self.load_patient_accounts(row[0])
                 self.load_patient_treatments(row[0])
         
         patient_tree.bind("<<TreeviewSelect>>", on_patient_select)
         history_tree.bind("<<TreeviewSelect>>", on_patient_select)
-
-        # Double click on history tree to connect / add patient to today's appointment (patient_tree)
-        def on_history_double_click(event):
-            selected_item = history_tree.focus()
-            if not selected_item:
-                return
-            values = history_tree.item(selected_item)["values"]
-            if not values:
-                return
-            patient_id = values[0]
-            patient_name = values[1] if len(values) > 1 else ""
-            address = values[2] if len(values) > 2 else ""
-
-            today_str = datetime.now().strftime("%d-%m-%Y")
-            time_str = datetime.now().strftime("%I:%M %p")
-            selected_doc = self.Doctor_var.get().strip()
-
-            # Update DB date & doctor for today's appointment
-            try:
-                conn = get_db_connection(self.app)
-                cursor = conn.cursor()
-                cursor.execute("UPDATE Appointments SET Date=?, Time=?, Doctor_Name=? WHERE id=?", (today_str, time_str, selected_doc, patient_id))
-                conn.commit()
-                conn.close()
-            except Exception as e:
-                print(f"Error updating appointment date: {e}")
-
-            treatment, doc = get_patient_latest_treatment(self.app, patient_id)
-            if not doc:
-                doc = selected_doc
-
-            # Check if patient is already in patient_tree
-            existing_item = None
-            for child in patient_tree.get_children():
-                c_vals = patient_tree.item(child)["values"]
-                if c_vals and str(c_vals[0]) == str(patient_id):
-                    existing_item = child
-                    patient_tree.item(child, values=(patient_id, patient_name, address, treatment, doc))
-                    break
-
-            if not existing_item:
-                existing_item = patient_tree.insert("", "end", values=(patient_id, patient_name, address, treatment, doc))
-
-            # Focus and select in patient_tree
-            patient_tree.selection_set(existing_item)
-            patient_tree.focus(existing_item)
-            patient_tree.see(existing_item)
-
-            # Trigger selection to populate form fields
-            on_patient_select(event)
-
-        history_tree.bind("<Double-1>", on_history_double_click)
 
     def load_patient_accounts(self, patient_id):
         if not hasattr(self, 'acc_tree') or not self.acc_tree:
@@ -726,16 +633,11 @@ class Registration:
             conn.close()
 
             balance = 0.0
-            has_today = False
-            today_str = datetime.now().strftime("%d-%m-%Y")
-
             for row in rows:
                 date_val, debit_val, credit_val, part_val, bal_val = row
                 d_num = float(debit_val) if debit_val else 0.0
                 c_num = float(credit_val) if credit_val else 0.0
                 balance += d_num - c_num
-                if str(date_val).strip() == today_str:
-                    has_today = True
                 self.acc_tree.insert("", "end", values=(date_val, f"{d_num:.2f}", f"{c_num:.2f}", part_val, f"{balance:.2f}"))
 
             if hasattr(self, 'balance_label'):
@@ -793,7 +695,6 @@ class Registration:
         self.bill_patientid.insert(0, self.format_patient_id(parsed))
 
     def bill(self):
-        # Sync values from UI inputs
         self.patient_data = {
             "patientid": self.bill_patientid.get().strip(),
             "regno": self.bill_regno.get().strip(),
@@ -847,33 +748,14 @@ class Registration:
         self.app.registration()
         
 #------create--------
-def appointments(app, Patient_Name, Age, Gender, Contact, Address1, Address2, Mobile_Number1, Mobile_Number2, Date, Time, Email_id, Notes, Doctor_Name=""):
+def appointments(app, Patient_Name, Age, Gender, Contact, Address1, Address2, Mobile_Number1, Mobile_Number2, Date, Time, Email_id, Notes):
     conn = get_db_connection(app)
     cursor = conn.cursor()
     cursor.execute('''
-        INSERT INTO Appointments (Patient_Name,Age,Gender,Contact,Address1,Address2,Mobile_Number1,Mobile_Number2,Date,Time,Email_id,Notes,Doctor_Name) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
-    ''', (Patient_Name, Age, Gender, Contact, Address1, Address2, Mobile_Number1, Mobile_Number2, Date, Time, Email_id, Notes, Doctor_Name))
+        INSERT INTO Appointments (Patient_Name,Age,Gender,Contact,Address1,Address2,Mobile_Number1,Mobile_Number2,Date,Time,Email_id,Notes) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+    ''', (Patient_Name, Age, Gender, Contact, Address1, Address2, Mobile_Number1, Mobile_Number2, Date, Time, Email_id, Notes))
     conn.commit()
     conn.close()
-
-def is_today_date(date_val):
-    if not date_val:
-        return True
-    today_str = datetime.now().strftime("%d-%m-%Y")
-    d_str = str(date_val).strip()
-    if d_str == today_str:
-        return True
-    try:
-        for fmt in ("%d-%m-%Y", "%d/%m/%Y", "%Y-%m-%d", "%d-%m-%y"):
-            try:
-                dt = datetime.strptime(d_str, fmt)
-                if dt.date() == datetime.now().date():
-                    return True
-            except ValueError:
-                pass
-    except Exception:
-        pass
-    return False
 
 #-------Select--------
 def get_all_appointments(app=None):
@@ -908,12 +790,12 @@ def get_patient_latest_treatment(app, patient_id):
     return "", ""
 
 #-------update---------
-def update_appointments(app, id, Patient_Name, Age, Gender, Contact, Address1, Address2, Mobile_Number1, Mobile_Number2, Date, Time, Email_id, Notes, Doctor_Name=""):
+def update_appointments(app, id, Patient_Name, Age, Gender, Contact, Address1, Address2, Mobile_Number1, Mobile_Number2, Date, Time, Email_id, Notes):
     conn = get_db_connection(app)
     cursor = conn.cursor()
     cursor.execute('''
-        UPDATE Appointments SET Patient_Name=?,Age=?,Gender=?,Contact=?,Address1=?,Address2=?,Mobile_Number1=?,Mobile_Number2=?,Date=?,Time=?,Email_id=?,Notes=?,Doctor_Name=? WHERE id=?
-    ''', (Patient_Name, Age, Gender, Contact, Address1, Address2, Mobile_Number1, Mobile_Number2, Date, Time, Email_id, Notes, Doctor_Name, id))
+        UPDATE Appointments SET Patient_Name=?,Age=?,Gender=?,Contact=?,Address1=?,Address2=?,Mobile_Number1=?,Mobile_Number2=?,Date=?,Time=?,Email_id=?,Notes=? WHERE id=?
+    ''', (Patient_Name, Age, Gender, Contact, Address1, Address2, Mobile_Number1, Mobile_Number2, Date, Time, Email_id, Notes, id))
     conn.commit()
     conn.close()
 
@@ -936,6 +818,4 @@ def get_doctor_names_from_db(app=None):
                     names.append(full_name)
     except Exception:
         pass
-    if not names:
-        names = ["Dr. Anoop", "Dr. Terry"]
     return names

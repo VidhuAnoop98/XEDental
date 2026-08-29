@@ -34,10 +34,8 @@ class Bill:
                     names.append(full_name)
         except Exception:
             pass
-
-        if not names:
-            names = ["Dr. Anoop", "Dr. Terry"]
         return names
+
 
     def get_treatments_and_fees(self):
         default_fees = {
@@ -111,14 +109,22 @@ class Bill:
         self.app.clear_workspace()
         self.app.workspace = tk.Frame(self.app.root, bd=3, relief="solid")
         self.app.workspace.pack(padx=10, pady=10, fill="both", expand=True)
-    
-        # Main frame
+
+        # ================ MAIN CONTENT FRAME ================
         self.main_frame = tk.Frame(self.app.workspace)
         self.main_frame.pack(fill="both", expand=True)
         
         # ================ LEFT PANEL ================
         self.left_frame = tk.LabelFrame(self.main_frame, text="Treatments", font=("Arial", 12, "bold"), width=350)
-        self.left_frame.pack(side="left", fill="y", padx=5, pady=5)
+        self.left_frame.pack(side="left", fill="both", expand=False, padx=5, pady=5)
+
+        # ================ CENTER PANEL (Bills, Comments & Action Bar) ================
+        self.center_frame = tk.LabelFrame(self.main_frame, text="Bills", font=("Arial", 12, "bold"))
+        self.center_frame.pack(side="right", fill="both", expand=True, padx=5, pady=5)
+
+        # Action bar at bottom of center panel only
+        action_bar = tk.Frame(self.center_frame, bd=1, relief="groove")
+        action_bar.pack(side="bottom", fill="x", padx=5, pady=5)
 
         # --- Patient Details ---
         self.patient = tk.LabelFrame(self.left_frame, text="Patient Details", font=("Arial", 10, "bold"), width=330, height=330)
@@ -295,30 +301,60 @@ class Bill:
         self.bill_patientid.bind("<Return>", search_patient)
         self.bill_regno.bind("<Return>", search_patient)
 
+        # --- Disease / Commits Section (placed below Patient Details) ---
+        self.disease_frame = tk.LabelFrame(self.left_frame, text="Disease", font=("Arial", 10, "bold"))
+        self.disease_frame.pack(fill="x", padx=5, pady=5)
+
+        disease_lbl = tk.Label(self.disease_frame, text="Disease:", font=("Arial", 9))
+        disease_lbl.grid(row=0, column=0, sticky="w", padx=2, pady=2)
+        self.disease_entry = tk.Entry(self.disease_frame, width=10)
+        self.disease_entry.grid(row=0, column=1, sticky="w", padx=2, pady=2)
+
+        read_lbl = tk.Label(self.disease_frame, text="Reading:", font=("Arial", 9))
+        read_lbl.grid(row=0, column=2, sticky="w", padx=2, pady=2)
+        self.reading_entry = tk.Entry(self.disease_frame, width=10)
+        self.reading_entry.grid(row=0, column=3, sticky="w", padx=2, pady=2)
+
+        def add_disease():
+            d = self.disease_entry.get()
+            r = self.reading_entry.get()
+            if d or r:
+                current_date = datetime.now().strftime("%d-%m-%Y")
+                dis.insert("", "end", values=(d, current_date, r))
+                self.disease_entry.delete(0, 'end')
+                self.reading_entry.delete(0, 'end')
+
+        def delete_disease():
+            selected = dis.selection()
+            if selected:
+                for item in selected:
+                    dis.delete(item)
+            else:
+                messagebox.showwarning("No Selection", "Please select a disease row to delete.")
+
+        btn_disease_frame = tk.Frame(self.disease_frame)
+        btn_disease_frame.grid(row=0, column=4, padx=2, pady=2)
+        tk.Button(btn_disease_frame, text="Add", font=("Arial", 8), command=add_disease).pack(side="left", padx=1)
+        tk.Button(btn_disease_frame, text="Delete", font=("Arial", 8), fg="red", command=delete_disease).pack(side="left", padx=1)
+
+        dis_columns = ("Disease", "Date", "Reading")
+        dis = ttk.Treeview(self.disease_frame, columns=dis_columns, show="headings", height=2)
+        dis.heading("Disease", text="Disease")
+        dis.heading("Date", text="Date")
+        dis.heading("Reading", text="Reading")
+
+        dis.column("Disease", width=80)
+        dis.column("Date", width=70)
+        dis.column("Reading", width=110)
+
+        dis.grid(row=1, column=0, columnspan=5, sticky="nsew", padx=2, pady=2)
+
         # --- Details / Action Buttons ---
         self.detials = tk.LabelFrame(self.left_frame, text="Actions", font=("Arial", 10, "bold"))
-        self.detials.pack(fill="both", expand=True, padx=5, pady=5)
+        self.detials.pack(fill="both", padx=5, pady=5)
 
         # Treatment type variable
         self.treatment_type_var = tk.StringVar(value="Teeth Based")
-
-        # def set_teeth_based():
-        #     self.treatment_type_var.set("Teeth Based")
-        #     btn_teeth.config(relief="sunken", bg="#C0EBE7")
-        #     btn_general.config(relief="raised", bg="SystemButtonFace")
-
-        # def set_general():
-        #     self.treatment_type_var.set("General")
-        #     btn_general.config(relief="sunken", bg="#C0EBE7")
-        #     btn_teeth.config(relief="raised", bg="SystemButtonFace")
-
-        # btn_teeth = tk.Button(self.detials, text="Teeth Based", font=("Arial", 12),
-        #                       relief="sunken", bg="#C0EBE7", command=set_teeth_based)
-        # btn_teeth.grid(row=0, column=0, sticky="w", padx=2, pady=2)
-
-        # btn_general = tk.Button(self.detials, text="General", font=("Arial", 12),
-        #                         command=set_general)
-        # btn_general.grid(row=0, column=1, sticky="w", padx=2, pady=2)
 
         btn_add = tk.Button(self.detials, text="Add to Treatment", font=("Arial", 11, "bold"),
                     bg="#4CAF50", fg="white", command=lambda: add_to_treatment())
@@ -355,27 +391,29 @@ class Bill:
 
         tk.Label(self.detials, text="Doctor:", font=("Arial", 10)).grid(row=2, column=2, padx=2, pady=2, sticky="e")
         doctor_names = self.get_doctor_names_from_db()
-        self.bill_doctor_combo = ttk.Combobox(self.detials, values=doctor_names, width=12)
+
+        def refresh_bill_doctors():
+            latest = self.get_doctor_names_from_db()
+            self.bill_doctor_combo['values'] = latest
+            if latest and not self.bill_doctor_combo.get():
+                self.bill_doctor_combo.set(latest[0])
+
+        self.bill_doctor_combo = ttk.Combobox(self.detials, values=doctor_names, width=12, postcommand=refresh_bill_doctors)
         if doctor_names:
             self.bill_doctor_combo.set(doctor_names[0])
         self.bill_doctor_combo.grid(row=2, column=3, padx=2, pady=2, sticky="w")
 
         # Bill tree to show added treatments
-        bill_columns = ("Tooth No", "Treatment", "Amount", "Doctor", "Type")
-        bill_tree = ttk.Treeview(self.left_frame, columns=bill_columns, show="headings", height=8)
-        # keep a reference so other methods can access current treatments
+        bill_columns = ("Tooth No", "Treatment", "Amount", "Doctor")
+        bill_tree = ttk.Treeview(self.left_frame, columns=bill_columns, show="headings", height=7)
         self.bill_tree = bill_tree
         for col in bill_columns:
             bill_tree.heading(col, text=col)
-            bill_tree.column(col, width=80)
-        bill_tree.pack(fill="both", expand=True, padx=5, pady=(5, 10))
+            bill_tree.column(col, width=40)
+        bill_tree.pack(fill="both", padx=5, pady=(5, 10))
 
         bill_total_label = tk.Label(self.left_frame, text="Total: ₹0.00", font=("Arial", 12, "bold"), fg="green")
         bill_total_label.pack(padx=10, pady=(0, 10), anchor="e")
-
-        # Action buttons placed under the bill tree (inside left_frame)
-        action_bar = tk.Frame(self.left_frame)
-        action_bar.pack(fill="x", padx=5, pady=(0, 10))
 
         def update_bill_total():
             total = 0.0
@@ -391,9 +429,8 @@ class Bill:
             tooth = self.bill_tooth_no.get()
             amount = self.bill_amount.get()
             doctor = self.bill_doctor_combo.get()
-            ttype = self.treatment_type_var.get()
             if treatment or amount:
-                bill_tree.insert("", "end", values=(tooth, treatment, amount, doctor, ttype))
+                bill_tree.insert("", "end", values=(tooth, treatment, amount, doctor))
                 self.bill_treatment_combo.set('')
                 self.bill_tooth_no.delete(0, 'end')
                 self.bill_amount.delete(0, 'end')
@@ -409,9 +446,6 @@ class Bill:
             else:
                 messagebox.showwarning("No Selection", "Please select a treatment to remove.")
 
-        def show_prescription():
-            pass
-
         def show_treatment_details():
             detail_win = tk.Toplevel(self.app.root)
             detail_win.title("Treatment Details")
@@ -420,14 +454,13 @@ class Bill:
 
             tk.Label(detail_win, text="Treatment Details", font=("Arial", 14, "bold")).pack(pady=10)
 
-            cols = ("Tooth No", "Treatment", "Amount", "Doctor", "Type")
+            cols = ("Tooth No", "Treatment", "Amount", "Doctor")
             detail_tree = ttk.Treeview(detail_win, columns=cols, show="headings", height=12)
             for col in cols:
                 detail_tree.heading(col, text=col)
-                detail_tree.column(col, width=100)
+                detail_tree.column(col, width=40)
             detail_tree.pack(fill="both", expand=True, padx=10, pady=5)
 
-            # Copy items from bill_tree
             for child in bill_tree.get_children():
                 values = bill_tree.item(child)["values"]
                 detail_tree.insert("", "end", values=values)
@@ -444,7 +477,6 @@ class Bill:
             update_bill_total()
 
         def save_and_go_to_details():
-            doc_notes_val = self.patient_data.get("doctor_notes", "") if hasattr(self, 'patient_data') and self.patient_data else ""
             self.patient_data = {
                 "patientid": self.bill_patientid.get(),
                 "regno": self.bill_regno.get(),
@@ -456,7 +488,7 @@ class Bill:
                 "office": self.bill_office.get(),
                 "residence": self.bill_residence.get(),
                 "email": self.bill_email.get(),
-                "doctor_notes": doc_notes_val
+                "comments": self.bill_notes.get("1.0", "end-1c") if hasattr(self, 'bill_notes') else ""
             }
             self.treatments_list = []
             for child in bill_tree.get_children():
@@ -465,8 +497,7 @@ class Bill:
                 treatment = str(raw_values[1]) if len(raw_values) > 1 else ""
                 amount = str(raw_values[2]) if len(raw_values) > 2 else "0.00"
                 doctor = str(raw_values[3]) if len(raw_values) > 3 else ""
-                ttype = str(raw_values[4]) if len(raw_values) > 4 else "Teeth Based"
-                self.treatments_list.append((tooth, treatment, amount, "", doctor, ttype))
+                self.treatments_list.append((tooth, treatment, amount, "", doctor))
             d = Doctors(self.app)
             d.patient_data = self.patient_data
             d.treatments_list = self.treatments_list
@@ -474,115 +505,53 @@ class Bill:
                 d.accounts_list = self.accounts_list
             d.doctors_detials()
 
+        # Action bar buttons
         btn_prescription = tk.Button(action_bar, text="Prescription", font=("Arial", 11),
                          command=self.prescription)
-        btn_prescription.grid(row=0, column=3, sticky="w", padx=2, pady=2)
+        btn_prescription.pack(side="left", padx=5, pady=5)
 
         btn_treatment = tk.Button(action_bar, text="Treatment Details", font=("Arial", 11),
                       command=show_treatment_details)
-        btn_treatment.grid(row=0, column=4, sticky="w", padx=2, pady=2)
+        btn_treatment.pack(side="left", padx=5, pady=5)
 
         btn_removing = tk.Button(action_bar, text="Remove", font=("Arial", 11),
                      fg="red", command=remove_treatment)
-        btn_removing.grid(row=0, column=5, sticky="w", padx=2, pady=2)
-
-        btn_close = tk.Button(action_bar, text="Close", font=("Arial", 11),
-                  command=self.close)
-        btn_close.grid(row=0, column=6, sticky="w", padx=2, pady=2)
+        btn_removing.pack(side="left", padx=5, pady=5)
 
         btn_bill_next = tk.Button(action_bar, text="Bill →", font=("Arial", 11, "bold"),
                      bg="#2196F3", fg="white", command=save_and_go_to_details)
-        btn_bill_next.grid(row=0, column=7, sticky="w", padx=2, pady=2)
+        btn_bill_next.pack(side="right", padx=5, pady=5)
 
-        # ================ CENTER PANEL (Bills) ================
-        self.center_frame = tk.LabelFrame(self.main_frame, text="Bills", font=("Arial", 12, "bold"))
-        self.center_frame.pack(side="left", fill="both", expand=True)
+        btn_close = tk.Button(action_bar, text="Close", font=("Arial", 11),
+                  command=self.close)
+        btn_close.pack(side="right", padx=5, pady=5)
 
-        # Teeth chart buttons
-        self.center_frame.grid_columnconfigure(0, weight=1)
-        self.center_frame.grid_columnconfigure(1, weight=1)
+        # Teeth chart buttons (top of center frame)
+        teeth_btn_frame = tk.Frame(self.center_frame)
+        teeth_btn_frame.pack(side="top", pady=5)
 
-        button_adult = tk.Button(self.center_frame, text="Adult", font=("Arial", 12),
+        button_adult = tk.Button(teeth_btn_frame, text="Adult", font=("Arial", 11, "bold"),
                                  fg="black", command=self.adult_teeth)
-        button_adult.grid(row=0, column=0, pady=5, padx=10, sticky="e")
+        button_adult.pack(side="left", padx=10)
 
-        button_child = tk.Button(self.center_frame, text="Child", font=("Arial", 12),
+        button_child = tk.Button(teeth_btn_frame, text="Child", font=("Arial", 11, "bold"),
                                  fg="black", command=self.child_teeth)
-        button_child.grid(row=0, column=1, pady=5, padx=10, sticky="w")
+        button_child.pack(side="left", padx=10)
 
-        # ================ RIGHT PANEL (Commits) ================
-        self.right_frame = tk.LabelFrame(self.main_frame, text="Commits", font=("Arial", 12, "bold"))
-        self.right_frame.pack(side="right", fill="both", expand=True, padx=5, pady=5)
-        
-        disease = tk.Label(self.right_frame, text="Disease:", font=("Arial", 12))
-        disease.grid(row=0, column=0, sticky="w", padx=10, pady=2)
-        self.disease_entry = tk.Entry(self.right_frame)
-        self.disease_entry.grid(row=0, column=1, sticky="we", padx=10, pady=2)
-        
-        read = tk.Label(self.right_frame, text="Reading:", font=("Arial", 12))
-        read.grid(row=0, column=2, sticky="w", padx=10, pady=2)
-        
-        self.reading_entry = tk.Entry(self.right_frame)
-        self.reading_entry.grid(row=0, column=3, sticky="we", padx=10, pady=2)
-        
-        # Disease treeview
-        dis_columns = ("Disease", "Date", "Reading")
-        dis = ttk.Treeview(self.right_frame, column=dis_columns, show="headings", height=2)
-        dis.heading("Disease", text="Disease")
-        dis.heading("Date", text="Date")
-        dis.heading("Reading", text="Reading")
+        # Teeth chart canvas container (middle of center frame)
+        self.teeth_container = tk.Frame(self.center_frame)
+        self.teeth_container.pack(side="top", fill="both", expand=True, pady=5)
 
-        dis.column("Disease", width=100)
-        dis.column("Date", width=50)
-        dis.column("Reading", width=220)
+        # Comments section (above action bar in center frame)
+        comments_frame = tk.LabelFrame(self.center_frame, text="Comments", font=("Arial", 11, "bold"))
+        comments_frame.pack(side="bottom", fill="both", expand=True, padx=10, pady=5)
 
-        def add_disease():
-            d = self.disease_entry.get()
-            r = self.reading_entry.get()
-            if d or r:
-                current_date = datetime.now().strftime("%d-%m-%Y")
-                dis.insert("", "end", values=(d, current_date, r))
-                self.disease_entry.delete(0, 'end')
-                self.reading_entry.delete(0, 'end')
+        scroll = tk.Scrollbar(comments_frame)
+        scroll.pack(side="right", fill="y")
 
-        def delete_disease():
-            selected = dis.selection()
-            if selected:
-                for item in selected:
-                    dis.delete(item)
-            else:
-                messagebox.showwarning("No Selection", "Please select a disease row to delete.")
-
-        btn_frame = tk.Frame(self.right_frame)
-        btn_frame.grid(row=0, column=4, padx=5, pady=2)
-        tk.Button(btn_frame, text="Add", command=add_disease).pack(side="left", padx=2)
-        tk.Button(btn_frame, text="Delete", fg="red", command=delete_disease).pack(side="left", padx=2)
-
-        dis.grid(row=1, column=0, columnspan=6, sticky="nsew", padx=10, pady=10)
-
-        # Comments section
-        comments = tk.Label(self.right_frame, text="Comments", font=("Arial", 12, "bold"))
-        comments.grid(row=2, column=0, sticky="w", padx=10, pady=2)
-
-        scroll = tk.Scrollbar(self.right_frame)
-        scroll.grid(row=3, column=5, sticky="ns")
-
-        self.bill_notes = tk.Text(self.right_frame, height=6, yscrollcommand=scroll.set)
-        self.bill_notes.grid(row=3, column=0, columnspan=5, sticky="nsew", padx=10, pady=5)
-
+        self.bill_notes = tk.Text(comments_frame, height=5, font=("Arial", 10), yscrollcommand=scroll.set)
+        self.bill_notes.pack(side="left", fill="both", expand=True, padx=5, pady=5)
         scroll.config(command=self.bill_notes.yview)
-
-        # Doctor's Notes section
-        comments1 = tk.Label(self.right_frame, text="Doctor's Notes", font=("Arial", 12, "bold"))
-        comments1.grid(row=4, column=0, sticky="w", padx=10, pady=2)
-
-        scroll1 = tk.Scrollbar(self.right_frame)
-        scroll1.grid(row=5, column=5, sticky="ns")
-
-        self.bill_doctor_notes = tk.Text(self.right_frame, height=6, yscrollcommand=scroll1.set)
-        self.bill_doctor_notes.grid(row=5, column=0, columnspan=5, sticky="nsew", padx=10, pady=5)
-
-        scroll1.config(command=self.bill_doctor_notes.yview)
 
         # Show adult teeth by default
         self.adult_teeth()
@@ -590,33 +559,31 @@ class Bill:
     def adult_teeth(self):
         if hasattr(self, 'canvas') and self.canvas is not None:
             self.canvas.destroy()
-        self.canvas = tk.Canvas(self.center_frame, width=300, height=580)
-        self.canvas.grid(row=2, column=0, columnspan=2, pady=10)
+
+        self.canvas = tk.Canvas(self.teeth_container, width=850, height=320)
+        self.canvas.pack(fill="both", expand=True, pady=2)
         canvas = self.canvas
-        canvas.create_text(145, 10, text="Adult", font=("Arial", 14, "bold"))
+        canvas.create_text(500, 15, text="Adult Teeth Chart", font=("Arial", 13, "bold"))
 
-        right= tk.Label(self.center_frame,font=("Arial",12),text="Right",bg="#C0EBE7")
-        right.grid(padx=40,pady=270)
+        canvas.create_text(200, 160, text="Right", font=("Arial", 12, "bold"), fill="#008080")
+        canvas.create_text(800, 160, text="Left", font=("Arial", 12, "bold"), fill="#008080")
 
-        left = tk.Label(self.center_frame,font=("Arial",12),text="Left",bg="#C0EBE7")
-        left.grid(padx=40,pady=270)
-        # Tooth positions
         teeth = [
             # Upper Right
-            (18,20,270),(17,20,230),(16,20,190),(15,20,150),
-            (14,40,110),(13,70,90),(12,100,70),(11,130,50),
+            (18,200,120),(17,240,110),(16,280,100),(15,320,90),
+            (14,360,80),(13,400,70),(12,440,60),(11,480,50), 
 
             # Upper Left
-            (21,170,50),(22,200,70),(23,230,90),(24,260,110),
-            (25,280,150),(26,280,190),(27,280,230),(28,280,270),
+            (21,520,50),(22,560,60),(23,600,70),(24,640,80),
+            (25,680,90),(26,720,100),(27,760,110),(28,800,120),
 
             # Lower Left
-            (38,280,350),(37,280,390),(36,280,430),(35,280,470),
-            (34,265,510),(33,235,535),(32,205,555),(31,170,560),
+            (38,800,200),(37,760,210),(36,720,220),(35,680,230),
+            (34,640,240),(33,600,250),(32,560,260),(31,520,270),
 
             # Lower Right
-            (41,135,560),(42,100,555),(43,70,535),(44,40,510),
-            (45,20,470),(46,20,430),(47,20,390),(48,20,350)
+            (41,480,270),(42,440,260),(43,400,250),(44,360,240),
+            (45,320,230),(46,280,220),(47,240,210),(48,200,200)
         ]
 
         r = 15
@@ -637,14 +604,12 @@ class Bill:
                 width=2
             )
 
-            # Number inside the circle
             canvas.create_text(
                 x, y,
                 text=str(tooth),
                 font=("Arial", 8, "bold")
             )
 
-            # Clickable area
             canvas.tag_bind(
                 canvas.create_oval(
                     x-r, y-r, x+r, y+r,
@@ -658,28 +623,31 @@ class Bill:
     def child_teeth(self): 
         if hasattr(self, 'canvas') and self.canvas is not None:
             self.canvas.destroy()
-        self.canvas = tk.Canvas(self.center_frame, width=300, height=580)
-        self.canvas.grid(row=2, column=0, columnspan=2, pady=10)
-        canvas = self.canvas
-        canvas.create_text(145, 10, text="Child", font=("Arial", 14, "bold"))
 
-        # Tooth positions
+        self.canvas = tk.Canvas(self.teeth_container, width=850, height=320)
+        self.canvas.pack(fill="both", expand=True, pady=2)
+        canvas = self.canvas
+        canvas.create_text(500, 15, text="Child Teeth Chart", font=("Arial", 13, "bold"))
+
+        canvas.create_text(300, 160, text="Right", font=("Arial", 12, "bold"), fill="#008080")
+        canvas.create_text(700, 160, text="Left", font=("Arial", 12, "bold"), fill="#008080")
+
         teeth = [
             # Upper Right
-            (55,40,300),(54,40,260),
-            (53,50,225),(52,80,195),(51,110,175),
+            (55,320,90),(54,360,80),
+            (53,400,70),(52,440,60),(51,480,50),
 
             # Upper Left
-            (61,150,175),(62,180,195),(63,210,225),
-            (64,220,260),(65,220,300),
+            (61,520,50),(62,560,60),(63,600,70),
+            (64,640,80),(65,680,90),
 
             # Lower Left
-            (75,235,380),(74,235,420),
-            (73,210,455),(72,180,480),(71,150,500),
+            (75,680,230),(74,640,240),
+            (73,600,250),(72,560,260),(71,520,270),
 
             # Lower Right
-            (81,110,500),(82,80,480),(83,50,455),
-            (84,40,420),(85,40,380)
+            (81,480,270),(82,440,260),(83,400,250),
+            (84,360,240),(85,320,230)
         ]
 
         r = 15
@@ -695,18 +663,17 @@ class Bill:
         for tooth, x, y in teeth:
             canvas.create_oval(
                 x-r, y-r, x+r, y+r,
+                fill="white",
                 outline="black",
                 width=2
             )
 
-            # Number inside the circle
             canvas.create_text(
                 x, y,
                 text=str(tooth),
                 font=("Arial", 8, "bold")
             )
 
-            # Clickable area
             canvas.tag_bind(
                 canvas.create_oval(
                     x-r, y-r, x+r, y+r,
@@ -717,14 +684,15 @@ class Bill:
                 lambda e, n=tooth: tooth_click(n)
             )
 
-
     def prescription(self):
         p = Prescription(self.app)
         p.patient_data = self.patient_data
         p.prescription()
 
     def close(self):
-        self.app.registration()
+        from registration import Registration
+        r = Registration(self.app)
+        r.registration_workspace()
 
 def get_db_connection(app=None):
     if app and hasattr(app, "get_db_connection"):

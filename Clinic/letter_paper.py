@@ -12,6 +12,48 @@ import os
 import subprocess
 import sys
 
+def convert_pdf_to_docx(pdf_path, docx_path=None):
+    """Converts a generated PDF letterhead/prescription file into an editable MS Word (.docx) document."""
+    if not docx_path:
+        docx_path = os.path.splitext(pdf_path)[0] + ".docx"
+
+    target_path = docx_path
+    counter = 1
+    while True:
+        try:
+            if os.path.exists(target_path):
+                with open(target_path, "a"):
+                    pass
+            break
+        except (PermissionError, IOError):
+            base, ext = os.path.splitext(docx_path)
+            target_path = f"{base}_{counter}{ext}"
+            counter += 1
+
+    try:
+        from pdf2docx import Converter
+        cv = Converter(pdf_path)
+        cv.convert(target_path)
+        cv.close()
+        return target_path
+    except Exception as exc:
+        print(f"pdf2docx conversion error: {exc}")
+        return target_path
+
+def open_file(filepath):
+    """Opens a PDF or DOCX file using system default application."""
+    try:
+        if hasattr(os, "startfile"):
+            os.startfile(filepath)
+        elif sys.platform.startswith("linux"):
+            subprocess.Popen(["xdg-open", filepath])
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", filepath])
+        else:
+            subprocess.Popen(["cmd", "/c", "start", "", filepath])
+    except Exception as exc:
+        messagebox.showwarning("Open File", f"Could not open file automatically.\n{exc}")
+
 class Letter:
     def __init__(self, app, mode="letter"):
         self.app = app
@@ -316,14 +358,7 @@ class Letter:
             if state["current_page"] < len(state["pages"]) - 1:
                 draw_page_preview(state["current_page"] + 1)
 
-        btn_prev = tk.Button(ctrl_frame, text=" ◀", font=("Arial", 9, "bold"), command=prev_page)
-        btn_prev.pack(side="left", padx=5)
-
-        page_lbl = tk.Label(ctrl_frame, text="Page 1 of 1", font=("Arial", 10, "bold"), bg="white")
-        page_lbl.pack(side="left", padx=5)
-
-        btn_next = tk.Button(ctrl_frame, text=" ▶", font=("Arial", 9, "bold"), command=next_page)
-        btn_next.pack(side="left", padx=5)
+        # Page buttons hidden for single-page preview
 
         def zoom_in():
             if self.preview_scale < 2.0:
@@ -336,13 +371,20 @@ class Letter:
                 draw_page_preview(state["current_page"])
 
         def on_mouse_wheel(event):
-            if getattr(event, "delta", 0) > 0 or getattr(event, "num", 0) == 4:
-                zoom_in()
+            if getattr(event, "state", 0) & 1:  # Shift pressed -> Horizontal scroll
+                if getattr(event, "delta", 0) > 0 or getattr(event, "num", 0) == 4:
+                    cv.xview_scroll(-1, "units")
+                else:
+                    cv.xview_scroll(1, "units")
             else:
-                zoom_out()
+                if getattr(event, "delta", 0) > 0 or getattr(event, "num", 0) == 4:
+                    zoom_in()
+                else:
+                    zoom_out()
             return "break"
 
         cv.bind("<MouseWheel>", on_mouse_wheel)
+        cv.bind("<Shift-MouseWheel>", on_mouse_wheel)
         cv.bind("<Button-4>", on_mouse_wheel)
         cv.bind("<Button-5>", on_mouse_wheel)
 
@@ -363,12 +405,16 @@ class Letter:
             w_scaled = int(PAGE_W * scale)
             h_scaled = int(PAGE_H * scale)
             mm_px = scale * 2.8346
-            
-            cv.config(scrollregion=(0, 0, w_scaled + 20, h_scaled + 20))
-            
-            canvas_width = w_scaled + 950
-            OX = (canvas_width - w_scaled) // 2
+
+            cv.update_idletasks()
+            win_w = cv.winfo_width()
+            content_w = max(win_w, w_scaled + 80) if win_w > 50 else w_scaled + 80
+            OX = max(40, (content_w - w_scaled) // 2)
             OY = 10
+            total_w = OX * 2 + w_scaled
+            total_h = h_scaled + 40
+            
+            cv.config(scrollregion=(0, 0, total_w, total_h))
             
             cv.create_rectangle(OX+4, OY+4, OX+w_scaled+4, OY+h_scaled+4, fill="#888888", outline="")
             cv.create_rectangle(OX, OY, OX+w_scaled, OY+h_scaled, fill="white", outline="#aaaaaa", width=1)
@@ -378,7 +424,6 @@ class Letter:
             def pcx():    return OX + w_scaled // 2
             def smm(v):   return int(v * mm_px)
 
-            page_lbl.config(text=f"Page {page_idx + 1} of {len(state['pages'])}")
             zoom_lbl.config(text=f"{int(scale / base_scale * 100)}%")
 
             logo_cx = ppx(30*rl_mm)
@@ -454,17 +499,7 @@ class Letter:
         btn_bar.pack(pady=8)
 
         def _open_pdf(path):
-            try:
-                if hasattr(os, "startfile"):
-                    os.startfile(path)
-                elif sys.platform.startswith("linux"):
-                    subprocess.Popen(["xdg-open", path])
-                elif sys.platform == "darwin":
-                    subprocess.Popen(["open", path])
-                else:
-                    subprocess.Popen(["cmd", "/c", "start", "", path])
-            except Exception as exc:
-                messagebox.showwarning("Open PDF", f"Could not open the PDF automatically.\n{exc}")
+            open_file(path)
 
         def _generate_pdf():
             if not reportlab_ok:
@@ -475,10 +510,11 @@ class Letter:
                 defaultextension=".pdf", initialfile="Anupam_Dental_Letterhead.pdf",
                 initialdir=SCRIPT_DIR, filetypes=[("PDF files", "*.pdf")],
                 title="Save Letterhead PDF As")
-            if not filepath: return
+            if not filepath:
+                return
             try:
                 generate_pdf(filepath)
-                messagebox.showinfo("Done", f"Letterhead saved:\n{filepath}")
+                messagebox.showinfo("Done", f"Letterhead PDF saved:\n{filepath}")
                 _open_pdf(filepath)
             except Exception as exc:
                 messagebox.showerror("Error", f"PDF generation failed:\n{exc}")
@@ -491,6 +527,7 @@ class Letter:
             tmp = os.path.join(SCRIPT_DIR, "_letterhead_temp.pdf")
             try:
                 generate_pdf(tmp)
+                convert_pdf_to_docx(tmp)
                 _open_pdf(tmp)
             except Exception as exc:
                 messagebox.showerror("Error", f"Could not open PDF:\n{exc}")
@@ -597,17 +634,17 @@ class Letter:
             add_rule()  
 
             # ── Consultants ───────────────────────────────────────────────
-            add_left("Consultants :", bold=True, size=9, space_after=2)
+            add_left("Consultants :", bold=True, size=9, space_after=0)
             for doc_info in CONSULTANTS:
                 add_left(doc_info["name"], bold=False, size=8, indent_mm=5, space_after=0)
-                add_left(doc_info["role"], bold=False, size=7, indent_mm=5, space_after=0)
-                add_left(doc_info["reg"],  bold=False, size=7, indent_mm=5, space_after=3)
+                add_left(doc_info["role"], bold=False, size=6, indent_mm=5, space_after=0)
+                add_left(doc_info["reg"],  bold=False, size=6, indent_mm=5, space_after=3)
 
-            add_left("Visiting :", bold=True, size=9, space_after=2)
+            add_left("Visiting :", bold=True, size=9, space_after=0)
             for doc_info in VISITING_DOCTORS:
                 add_left(doc_info["name"], bold=False, size=8, indent_mm=5, space_after=0)
-                add_left(doc_info["role"], bold=False, size=7, indent_mm=5, space_after=0)
-                add_left(doc_info["reg"],  bold=False, size=7, indent_mm=5, space_after=3)
+                add_left(doc_info["role"], bold=False, size=6, indent_mm=5, space_after=0)
+                add_left(doc_info["reg"],  bold=False, size=6, indent_mm=5, space_after=3)
 
             add_rule()
 
@@ -644,9 +681,11 @@ class Letter:
             if not filepath:
                 return
             try:
-                _open_word(filepath, CLINIC_NAME, CLINIC_ADDRESS,
-                           CLINIC_PHONE, CLINIC_RESI, CLINIC_HOURS)
+                tmp_pdf = os.path.join(SCRIPT_DIR, "_letterhead_temp.pdf")
+                generate_pdf(tmp_pdf)
+                convert_pdf_to_docx(tmp_pdf, filepath)
                 messagebox.showinfo("Done", f"Word document saved:\n{filepath}")
+                open_file(filepath)
             except PermissionError:
                 messagebox.showerror("Error", f"Word generation failed: Permission Denied.\n\nPlease close the file '{os.path.basename(filepath)}' in Microsoft Word (or any other program) and try again.")
             except Exception as exc:
@@ -889,14 +928,7 @@ class Letter:
             if state["current_page"] < len(state["pages"]) - 1:
                 draw_page_preview(state["current_page"] + 1)
 
-        btn_prev = tk.Button(ctrl_frame, text=" ◀", font=("Arial", 9, "bold"), command=prev_page)
-        btn_prev.pack(side="left", padx=5)
-
-        page_lbl = tk.Label(ctrl_frame, text="Page 1 of 1", font=("Arial", 10, "bold"), bg="white")
-        page_lbl.pack(side="left", padx=5)
-
-        btn_next = tk.Button(ctrl_frame, text=" ▶", font=("Arial", 9, "bold"), command=next_page)
-        btn_next.pack(side="left", padx=5)
+        # Page buttons hidden for single-page preview
 
         def zoom_in():
             if self.preview_scale < 2.0:
@@ -909,13 +941,20 @@ class Letter:
                 draw_page_preview(state["current_page"])
 
         def on_mouse_wheel(event):
-            if getattr(event, "delta", 0) > 0 or getattr(event, "num", 0) == 4:
-                zoom_in()
+            if getattr(event, "state", 0) & 1:  # Shift pressed -> Horizontal scroll
+                if getattr(event, "delta", 0) > 0 or getattr(event, "num", 0) == 4:
+                    cv.xview_scroll(-1, "units")
+                else:
+                    cv.xview_scroll(1, "units")
             else:
-                zoom_out()
+                if getattr(event, "delta", 0) > 0 or getattr(event, "num", 0) == 4:
+                    zoom_in()
+                else:
+                    zoom_out()
             return "break"
 
         cv.bind("<MouseWheel>", on_mouse_wheel)
+        cv.bind("<Shift-MouseWheel>", on_mouse_wheel)
         cv.bind("<Button-4>", on_mouse_wheel)
         cv.bind("<Button-5>", on_mouse_wheel)
 
@@ -936,12 +975,16 @@ class Letter:
             w_scaled = int(PAGE_W * scale)
             h_scaled = int(PAGE_H * scale)
             mm_px = scale * 2.8346
-            
-            cv.config(scrollregion=(0, 0, w_scaled + 20, h_scaled + 20))
-            
-            canvas_width = w_scaled + 950
-            OX = (canvas_width - w_scaled) // 2
+
+            cv.update_idletasks()
+            win_w = cv.winfo_width()
+            content_w = max(win_w, w_scaled + 80) if win_w > 50 else w_scaled + 80
+            OX = max(40, (content_w - w_scaled) // 2)
             OY = 10
+            total_w = OX * 2 + w_scaled
+            total_h = h_scaled + 40
+            
+            cv.config(scrollregion=(0, 0, total_w, total_h))
             
             cv.create_rectangle(OX+4, OY+4, OX+w_scaled+4, OY+h_scaled+4, fill="#888888", outline="")
             cv.create_rectangle(OX, OY, OX+w_scaled, OY+h_scaled, fill="white", outline="#aaaaaa", width=1)
@@ -951,7 +994,6 @@ class Letter:
             def pcx():    return OX + w_scaled // 2
             def smm(v):   return int(v * mm_px)
 
-            page_lbl.config(text=f"Page {page_idx + 1} of {len(state['pages'])}")
             zoom_lbl.config(text=f"{int(scale / base_scale * 100)}%")
 
             # Draw the logo
@@ -972,15 +1014,17 @@ class Letter:
                 cv.create_oval(logo_cx-logo_r, logo_cy-logo_r,
                                logo_cx+logo_r, logo_cy+logo_r, outline="#555")
 
-            # Header Text
-            cv.create_text(pcx() + 40, ppy(PAGE_H - 13*mm), text=CLINIC_NAME,
-                           font=("Times New Roman", max(10, smm(6)), "bold"), fill="#1a1a1a")
-            cv.create_text(pcx() + 20, ppy(PAGE_H - 20*mm), text=CLINIC_ADDRESS,
-                           font=("Arial", max(8, smm(3))), fill="#333")
-            cv.create_text(pcx() + 140, ppy(PAGE_H - 27*mm), text=CLINIC_PHONE,
-                           font=("Arial", max(8, smm(3))), fill="#333")
-            cv.create_text(pcx() + 130, ppy(PAGE_H - 32*mm), text=CLINIC_RESI,
-                           font=("Arial", max(8, smm(3))), fill="#333")
+            # Header Text (match the generated PDF layout)
+            header_cx = PAGE_W * 0.60
+            header_cx1 = PAGE_W * 0.85
+            cv.create_text(ppx(header_cx), ppy(PAGE_H - 15*mm), text=CLINIC_NAME,
+                           font=("Times New Roman", max(10, smm(6)), "bold"), fill="#1a1a1a", anchor="center")
+            cv.create_text(ppx(header_cx), ppy(PAGE_H - 20*mm), text=CLINIC_ADDRESS,
+                           font=("Arial", max(8, smm(3))), fill="#333", anchor="center")
+            cv.create_text(ppx(header_cx1), ppy(PAGE_H - 25*mm), text=CLINIC_PHONE,
+                           font=("Arial", max(8, smm(3))), fill="#333", anchor="center")
+            cv.create_text(ppx(header_cx1), ppy(PAGE_H - 30*mm), text=CLINIC_RESI,
+                           font=("Arial", max(8, smm(3))), fill="#333", anchor="center")
 
             # Horizontal rule under header
             rule_y   = ppy(PAGE_H - 37*mm)
@@ -1051,47 +1095,56 @@ class Letter:
         btn_bar.pack(pady=8)
 
         def _open_pdf(path):
-            try:
-                import subprocess
-                import sys
-                if hasattr(os, "startfile"):
-                    os.startfile(path)
-                elif sys.platform.startswith("linux"):
-                    subprocess.Popen(["xdg-open", path])
-                elif sys.platform == "darwin":
-                    subprocess.Popen(["open", path])
-                else:
-                    subprocess.Popen(["cmd", "/c", "start", "", path])
-            except Exception as exc:
-                messagebox.showwarning("Open PDF", f"Could not open the PDF automatically.\n{exc}")
+            open_file(path)
 
         def _generate_pdf():
             filepath = filedialog.asksaveasfilename(
                 defaultextension=".pdf", initialfile="Anupam_Dental_Clinic_Plain_Prescription.pdf",
                 initialdir=SCRIPT_DIR, filetypes=[("PDF files", "*.pdf")],
-                title="Save Letterhead PDF As")
-            if not filepath: return
+                title="Save Prescription PDF As")
+            if not filepath:
+                return
             try:
                 generate_pdf(filepath)
-                messagebox.showinfo("Done", f"Letterhead saved:\n{filepath}")
+                docx_path = convert_pdf_to_docx(filepath)
+                messagebox.showinfo("Done", f"Prescription saved successfully:\n📄 PDF: {filepath}\n📝 Word: {docx_path}")
                 _open_pdf(filepath)
             except Exception as exc:
                 messagebox.showerror("Error", f"PDF generation failed:\n{exc}")
+
+        def _generate_word():
+            filepath = filedialog.asksaveasfilename(
+                defaultextension=".docx", initialfile="Anupam_Dental_Clinic_Plain_Prescription.docx",
+                initialdir=SCRIPT_DIR, filetypes=[("Word Document", "*.docx")],
+                title="Save Prescription Word Doc As")
+            if not filepath:
+                return
+            try:
+                tmp_pdf = os.path.join(SCRIPT_DIR, "_plain_prescription_temp.pdf")
+                generate_pdf(tmp_pdf)
+                docx_path = convert_pdf_to_docx(tmp_pdf, filepath)
+                messagebox.showinfo("Done", f"Word Prescription saved:\n{docx_path}")
+                open_file(docx_path)
+            except Exception as exc:
+                messagebox.showerror("Error", f"Word generation failed:\n{exc}")
 
         def _print_now():
             tmp = os.path.join(SCRIPT_DIR, "_plain_prescription_temp.pdf")
             try:
                 generate_pdf(tmp)
+                convert_pdf_to_docx(tmp)
                 _open_pdf(tmp)
             except Exception as exc:
                 messagebox.showerror("Error", f"Could not open PDF:\n{exc}")
 
         tk.Button(btn_bar, text="📄  Generate PDF", font=("Arial", 11), width=16,
-                  bg="#1565C0", fg="white", command=_generate_pdf).grid(row=0, column=0, padx=8)
+                  bg="#1565C0", fg="white", command=_generate_pdf).grid(row=0, column=0, padx=6)
+        tk.Button(btn_bar, text="📝  Word", font=("Arial", 11), width=12,
+                  bg="#6A1B9A", fg="white", command=_generate_word).grid(row=0, column=1, padx=6)
         tk.Button(btn_bar, text="🖨  Open / Print", font=("Arial", 11), width=16,
-                  bg="#2E7D32", fg="white", command=_print_now).grid(row=0, column=1, padx=8)
+                  bg="#2E7D32", fg="white", command=_print_now).grid(row=0, column=2, padx=6)
         tk.Button(btn_bar, text="Close",            font=("Arial", 11), width=10,
-                  command=self.close).grid(row=0, column=2, padx=8)
+                  command=self.close).grid(row=0, column=3, padx=6)
     def todayapp(self):
         try:
             from reportlab.lib.pagesizes import A4
@@ -1343,14 +1396,7 @@ class Letter:
             if state["current_page"] < len(state["pages"]) - 1:
                 draw_page_preview(state["current_page"] + 1)
 
-        btn_prev = tk.Button(ctrl_frame, text=" ◀", font=("Arial", 9, "bold"), command=prev_page)
-        btn_prev.pack(side="left", padx=5)
-
-        page_lbl = tk.Label(ctrl_frame, text="Page 1 of 1", font=("Arial", 10, "bold"), bg="white")
-        page_lbl.pack(side="left", padx=5)
-
-        btn_next = tk.Button(ctrl_frame, text=" ▶", font=("Arial", 9, "bold"), command=next_page)
-        btn_next.pack(side="left", padx=5)
+        # Page buttons hidden for single-page preview
 
         def zoom_in():
             if self.preview_scale < 2.0:
@@ -1390,12 +1436,16 @@ class Letter:
             w_scaled = int(PAGE_W * scale)
             h_scaled = int(PAGE_H * scale)
             mm_px = scale * 2.8346
-            
-            cv.config(scrollregion=(0, 0, w_scaled + 20, h_scaled + 20))
-            
-            canvas_width = w_scaled + 950
-            OX = (canvas_width - w_scaled) // 2
+
+            cv.update_idletasks()
+            win_w = cv.winfo_width()
+            content_w = max(win_w, w_scaled + 80) if win_w > 50 else w_scaled + 80
+            OX = max(40, (content_w - w_scaled) // 2)
             OY = 10
+            total_w = OX * 2 + w_scaled
+            total_h = h_scaled + 40
+            
+            cv.config(scrollregion=(0, 0, total_w, total_h))
             
             cv.create_rectangle(OX+4, OY+4, OX+w_scaled+4, OY+h_scaled+4, fill="#888888", outline="")
             cv.create_rectangle(OX, OY, OX+w_scaled, OY+h_scaled, fill="white", outline="#aaaaaa", width=1)
@@ -1405,7 +1455,6 @@ class Letter:
             def pcx():    return OX + w_scaled // 2
             def smm(v):   return int(v * mm_px)
 
-            page_lbl.config(text=f"Page {page_idx + 1} of {len(state['pages'])}")
             zoom_lbl.config(text=f"{int(scale / base_scale * 100)}%")
 
             # Draw the logo
@@ -1522,14 +1571,7 @@ class Letter:
         ctrl_frame = tk.Frame(ws)
         ctrl_frame.pack(fill="x", pady=4)
 
-        btn_prev = tk.Button(ctrl_frame, text=" ◀", font=("Arial", 9, "bold"), command=prev_page)
-        btn_prev.pack(side="left", padx=5)
-
-        page_lbl = tk.Label(ctrl_frame, text="Page 1 of 1", font=("Arial", 10, "bold"), bg="white")
-        page_lbl.pack(side="left", padx=5)
-
-        btn_next = tk.Button(ctrl_frame, text=" ▶", font=("Arial", 9, "bold"), command=next_page)
-        btn_next.pack(side="left", padx=5)
+        # Page buttons hidden for single-page preview
 
         btn_zoom_out = tk.Button(ctrl_frame, text="-", font=("Arial", 9, "bold"), command=zoom_out)
         btn_zoom_out.pack(side="left", padx=5)

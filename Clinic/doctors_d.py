@@ -23,13 +23,16 @@ class Doctors:
             rows = cursor.fetchall()
             conn.close()
             for first, last in rows:
-                name = f"Dr. {first or ''} {last or ''}".strip()
-                if name != "Dr." and name not in names:
-                    names.append(name)
+                fname = (first or "").strip()
+                lname = (last or "").strip()
+                full_name = f"{fname} {lname}".strip()
+                if full_name:
+                    if not full_name.lower().startswith("dr.") and not full_name.lower().startswith("dr "):
+                        full_name = f"Dr. {full_name}"
+                    if full_name not in names:
+                        names.append(full_name)
         except Exception:
             pass
-        if not names:
-            names = ["Dr. Anoop", "Dr. Terry"]
         return names
 
     def doctors_detials(self):
@@ -61,7 +64,7 @@ class Doctors:
                 treatment_val = str(vals[1])
                 amount_val = str(vals[2])
                 amount_paid_val = str(vals[3]) if len(vals) > 3 else ""
-                doc_val = str(vals[4]) if len(vals) > 4 and vals[4] else "Dr. Anoop"
+                doc_val = str(vals[4]) if len(vals) > 4 and vals[4] else "" 
                 ttype_val = "General" if not tooth_val else "Teeth Based"
                 new_treatments.append((tooth_val, treatment_val, amount_val, amount_paid_val, doc_val, ttype_val))
             self.treatments_list = new_treatments
@@ -246,7 +249,14 @@ class Doctors:
 
         tk.Label(treat_ctrl_frame, text="Doctor:", font=("Arial", 9, "bold"), bg="#EAE6DF").pack(side="left", padx=(5, 2), pady=4)
         doc_list = self.get_doctor_list()
-        self.doctors_entry = ttk.Combobox(treat_ctrl_frame, values=doc_list, width=14)
+
+        def refresh_doctors_d_list():
+            latest = self.get_doctor_list()
+            self.doctors_entry['values'] = latest
+            if latest and not self.doctors_entry.get():
+                self.doctors_entry.set(latest[0])
+
+        self.doctors_entry = ttk.Combobox(treat_ctrl_frame, values=doc_list, width=14, postcommand=refresh_doctors_d_list)
         if doc_list:
             self.doctors_entry.set(doc_list[0])
         self.doctors_entry.pack(side="left", padx=2, pady=4)
@@ -272,7 +282,7 @@ class Doctors:
         def add_payment():
             selected = doc_tree.selection()
             paid_str = self.amount_paid_entry.get().strip()
-            selected_doc = self.doctors_entry.get().strip() or "Dr. Anoop"
+            selected_doc = self.doctors_entry.get().strip()
 
             if not paid_str:
                 messagebox.showwarning("Input Required", "Please enter Amount Paid.")
@@ -296,8 +306,8 @@ class Doctors:
             credit_val = paid_str
 
             balance = 0.0
-            for child in acc_tree.get_children():
-                values = acc_tree.item(child)["values"]
+            for child in self.acc_tree.get_children():
+                values = self.acc_tree.item(child)["values"]
                 try:
                     balance += float(values[1]) if values[1] else 0.0
                 except (ValueError, IndexError):
@@ -311,7 +321,7 @@ class Doctors:
             except ValueError:
                 pass
 
-            acc_tree.insert("", "end", values=(date_str, "0.00", credit_val, particulars_val, f"{balance:.2f}"))
+            self.acc_tree.insert("", "end", values=(date_str, "0.00", credit_val, particulars_val, f"{balance:.2f}"))
             self.amount_paid_entry.delete(0, 'end')
             update_total()
             calculate_balance()
@@ -351,17 +361,17 @@ class Doctors:
 
             if len(item) >= 6:
                 amount_paid = item[3] if len(item) > 3 else ""
-                doc = item[4] if len(item) > 4 and item[4] else "Dr. Anoop"
+                doc = item[4] if len(item) > 4 and item[4] else ""
             elif len(item) >= 5:
                 # legacy format: (tooth, treatment, amount, doctor, type)
                 amount_paid = ""
-                doc = item[3] if len(item) > 3 and item[3] else "Dr. Anoop"
+                doc = item[3] if len(item) > 3 and item[3] else ""
             elif len(item) == 4:
                 amount_paid = ""
-                doc = item[3] if len(item) > 3 and item[3] else "Dr. Anoop"
+                doc = item[3] if len(item) > 3 and item[3] else "" 
             else:
                 amount_paid = ""
-                doc = "Dr. Anoop"
+                doc = ""
 
             doc_tree.insert("", "end", values=(tooth, treatment, amount, amount_paid, doc))
         update_total()
@@ -645,18 +655,16 @@ class Doctors:
 
         balance_due = total_debit - total_credit
         current_date = datetime.now().strftime("%d-%m-%Y")
-        comments = self.bill_notes.get("1.0", "end-1c") if hasattr(self, 'bill_notes') else ""
-        dr_notes = self.bill_doctor_notes.get("1.0", "end-1c") if hasattr(self, 'bill_doctor_notes') else ""
-
+        comments = self.bill_notes.get("1.0", "end-1c") if hasattr(self, 'bill_notes') and self.bill_notes else ""
         try:
             conn = get_db_connection(self.app)
             cursor = conn.cursor()
 
             # Insert Bill header
             cursor.execute('''
-                INSERT INTO Bills (Patient_ID, Reg_No, Patient_Name, Date, Total_Amount, Balance_Due, Comments, Doctor_Notes)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (p_id, reg_no, p_name, current_date, total_amt, balance_due, comments, dr_notes))
+                INSERT INTO Bills (Patient_ID, Reg_No, Patient_Name, Date, Total_Amount, Balance_Due, Comments)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (p_id, reg_no, p_name, current_date, total_amt, balance_due, comments))
             bill_id = cursor.lastrowid
 
             # Insert treatments
@@ -666,9 +674,7 @@ class Doctors:
                     if str(old[0]) == str(treat[0]) and str(old[1]) == str(treat[1]) and str(old[2]) == str(treat[2]) and str(old[3]) == str(treat[3]):
                         ttype = old[4] if len(old) > 4 else "Teeth Based"
                         break
-                doctor_name = str(treat[4]).strip() if len(treat) > 4 and treat[4] else "Dr. Anoop"
-                if not doctor_name or doctor_name.isdigit():
-                    doctor_name = "Dr. Anoop"
+                doctor_name = str(treat[4]).strip() if len(treat) > 4 and treat[4] else "" 
                 cursor.execute('''
                     INSERT INTO Bill_Treatments (Bill_ID, Tooth_No, Treatment, Amount, Doctor, Type)
                     VALUES (?, ?, ?, ?, ?, ?)
@@ -859,7 +865,7 @@ class Doctors:
             pdf.drawString(45, y - 13, str(si))
             pdf.drawString(90, y - 13, str(treat[0]))
             pdf.drawString(170, y - 13, str(treat[1]))
-            doctor_name = str(treat[4]) if len(treat) > 4 and treat[4] else "Dr. Anoop"
+            doctor_name = str(treat[4]) if len(treat) > 4 and treat[4] else "" 
             pdf.drawString(370, y - 13, doctor_name)
             pdf.drawRightString(width - 45, y - 13, f"{float(treat[2]):.2f}" if treat[2] else "0.00")
             pdf.line(40, y - 18, width - 40, y - 18)

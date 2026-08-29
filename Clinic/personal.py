@@ -531,6 +531,51 @@ class Personal:
         except Exception as e:
             messagebox.showerror("Error", f"Failed to update telephone numbers: {e}")
 
+    def Clinic_Timing(self):
+        win = tk.Toplevel(self.app.root)
+        win.title("Clinic Timing")
+        height = 170
+        width = 400
+        x = (win.winfo_screenwidth() - width) // 2
+        y = (win.winfo_screenheight() - height) // 2
+        win.geometry(f"{width}x{height}+{x}+{y}")
+
+        lbl1 = tk.Label(win, text="Open Time", font=("Arial", 11, "bold"), fg="#2C3E50")
+        lbl1.grid(row=1, column=0, pady=6, padx=10)
+        txt1 = tk.Entry(win, width=28, justify="center")
+        txt1.grid(row=1, column=1, pady=6, padx=10)
+        txt1.insert(0, self._get_clinic_setting("clinic_open_time", "10:00 AM"))
+
+        lbl2 = tk.Label(win, text="Close Time", font=("Arial", 11, "bold"), fg="#2C3E50")
+        lbl2.grid(row=2, column=0, pady=6, padx=10)
+        txt2 = tk.Entry(win, width=28, justify="center")
+        txt2.grid(row=2, column=1, pady=6, padx=10)
+        txt2.insert(0, self._get_clinic_setting("clinic_close_time", "07:00 PM"))
+
+        lbl3 = tk.Label(win, text="Holiday", font=("Arial", 11, "bold"), fg="#2C3E50")
+        lbl3.grid(row=3, column=0, pady=6, padx=10)
+        txt3 = tk.Entry(win, width=28, justify="center")
+        txt3.grid(row=3, column=1, pady=6, padx=10)
+        txt3.insert(0, self._get_clinic_setting("clinic_holiday", "Tuesday Holiday"))
+
+        btn_frame = tk.Frame(win)
+        btn_frame.grid(row=5, column=1, pady=6)
+        btn1 = tk.Button(btn_frame, text="Update", font=("Arial", 10), width=10, 
+                         command=lambda: self._update_clinic_timing(txt1.get().strip(), txt2.get().strip(), txt3.get().strip(), win))
+        btn1.grid(row=5, column=0, padx=6)
+        btn2 = tk.Button(btn_frame, text="Close", font=("Arial", 10), width=10, command=win.destroy)
+        btn2.grid(row=5, column=1, padx=6)
+
+    def _update_clinic_timing(self, open_time, close_time, holiday, win):
+        try:
+            self._set_clinic_setting("clinic_open_time", open_time)
+            self._set_clinic_setting("clinic_close_time", close_time)
+            self._set_clinic_setting("clinic_holiday", holiday)
+            messagebox.showinfo("Success", "Clinic timing updated successfully.")
+            win.destroy()
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to update clinic timing: {e}")
+
     def _get_clinic_setting(self, key, default=""):
         try:
             conn = self.get_db_connection()
@@ -1993,8 +2038,17 @@ class Personal:
         right_frame.pack(side="right", fill="both", expand=True, padx=(10, 0), pady=10)
 
         tk.Label(left_frame, text="Select Doctor:", font=('Arial', 11)).pack(anchor='w', padx=10, pady=(10, 2))
-        self.doctor_combo = ttk.Combobox(left_frame, values=["Dr. Anoop", "Dr. Terry"], state="readonly", font=('Arial', 11), width=24)
-        self.doctor_combo.current(0)
+        leave_docs = self._get_doctor_names()
+        
+        def refresh_leave_docs():
+            latest = self._get_doctor_names()
+            self.doctor_combo['values'] = latest
+            if latest and not self.doctor_combo.get():
+                self.doctor_combo.set(latest[0])
+
+        self.doctor_combo = ttk.Combobox(left_frame, values=leave_docs, state="readonly", font=('Arial', 11), width=24, postcommand=refresh_leave_docs)
+        if leave_docs:
+            self.doctor_combo.set(leave_docs[0])
         self.doctor_combo.pack(anchor='w', padx=10, pady=(0, 10))
 
         tk.Label(left_frame, text="Selected Date:", font=('Arial', 11)).pack(anchor='w', padx=10, pady=(0, 2))

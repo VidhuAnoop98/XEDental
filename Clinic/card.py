@@ -31,6 +31,80 @@ def init_db(app=None):
     conn.commit()
     conn.close()
 
+def get_clinic_card_info(app=None):
+    try:
+        conn = get_db_connection(app)
+        cursor = conn.cursor()
+        cursor.execute("SELECT key, value FROM Clinic_Settings")
+        settings = dict(cursor.fetchall())
+        conn.close()
+    except Exception:
+        settings = {}
+
+    clinic_name = settings.get("clinic_name", "ANUPAM DENTAL CLINIC").strip()
+    if not clinic_name:
+        clinic_name = "ANUPAM DENTAL CLINIC"
+
+    mobile = settings.get("clinic_mobile", "9446046868").strip()
+    if not mobile:
+        mobile = "9446046868"
+
+    clinic_line = f"West Gate Vaikom - 686141, Ph : {mobile}"
+
+    open_time = settings.get("clinic_open_time", "10:00 AM").strip()
+    close_time = settings.get("clinic_close_time", "07:00 PM").strip()
+    holiday = settings.get("clinic_holiday", "Tuesday Holiday").strip()
+
+    if holiday:
+        clinic_hours = f"Clinic Hours :{open_time} to {close_time}, {holiday}"
+    else:
+        clinic_hours = f"Clinic Hours :{open_time} to {close_time}"
+
+    return clinic_name, clinic_line, clinic_hours
+
+def convert_pdf_to_docx(pdf_path, docx_path=None):
+    """Converts a generated PDF card file into an editable MS Word (.docx) document."""
+    if not docx_path:
+        docx_path = os.path.splitext(pdf_path)[0] + ".docx"
+
+    target_path = docx_path
+    counter = 1
+    while True:
+        try:
+            if os.path.exists(target_path):
+                with open(target_path, "a"):
+                    pass
+            break
+        except (PermissionError, IOError):
+            base, ext = os.path.splitext(docx_path)
+            target_path = f"{base}_{counter}{ext}"
+            counter += 1
+
+    try:
+        from pdf2docx import Converter
+        cv = Converter(pdf_path)
+        cv.convert(target_path)
+        cv.close()
+        return target_path
+    except Exception as exc:
+        print(f"pdf2docx conversion error: {exc}")
+        return target_path
+
+def open_file(filepath):
+    """Opens a PDF or DOCX file using the system default application."""
+    try:
+        import subprocess, sys
+        if hasattr(os, "startfile"):
+            os.startfile(filepath)
+        elif sys.platform.startswith("linux"):
+            subprocess.Popen(["xdg-open", filepath])
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", filepath])
+        else:
+            subprocess.Popen(["cmd", "/c", "start", "", filepath])
+    except Exception as exc:
+        messagebox.showwarning("Open File", f"Could not open file automatically.\n{exc}")
+
 class Card:
     def __init__(self, app):
         self.app = app
@@ -56,11 +130,9 @@ class Card:
         LOGO_PATH = os.path.join(SCRIPT_DIR, "Dental_logo.png")
         
         # ----------------------------------------------------------------------
-        # Editable clinic data
+        # Dynamic clinic data from Clinic_Settings
         # ----------------------------------------------------------------------
-        CLINIC_NAME = "ANUPAM DENTAL CLINIC"
-        CLINIC_LINE = "West Gate Vaikom - 686141, Ph : 216878 Res : 216858"
-        CLINIC_HOURS = "Clinic Hours :10:00 AM to 07:00 PM, Tuesday Holiday"
+        CLINIC_NAME, CLINIC_LINE, CLINIC_HOURS = get_clinic_card_info(self.app)
         FIELD_LABELS = ["Reg No",  "PID", "Date", "Age", "Name", "Address"]
         
         # Reference aspect ratio taken from the original printed card (w / h)
@@ -122,7 +194,7 @@ class Card:
         
             # ---------- outer card border ----------
             c.setLineWidth(0.4)
-            c.roundRect(x0, y0, w, h, 2 * mm, stroke=1, fill=0)
+            c.rect(x0, y0, w, h, stroke=1, fill=0)
         
             # ---------- title box ----------
             title_top = top_y(0.06)
@@ -375,19 +447,7 @@ class Card:
         btn_bar.pack(pady=8)
 
         def _open_pdf(path):
-            try:
-                import subprocess
-                import sys
-                if hasattr(os, "startfile"):
-                    os.startfile(path)
-                elif sys.platform.startswith("linux"):
-                    subprocess.Popen(["xdg-open", path])
-                elif sys.platform == "darwin":
-                    subprocess.Popen(["open", path])
-                else:
-                    subprocess.Popen(["cmd", "/c", "start", "", path])
-            except Exception as exc:
-                messagebox.showwarning("Open PDF", f"Could not open the PDF automatically.\n{exc}")
+            open_file(path)
 
         def _generate_pdf():
             from tkinter import filedialog
@@ -398,28 +458,50 @@ class Card:
             if not filepath: return
             try:
                 generate_pdf(filepath)
-                messagebox.showinfo("Done", f"Card saved:\n{filepath}")
+                docx_path = convert_pdf_to_docx(filepath)
+                messagebox.showinfo("Done", f"Card saved successfully:\n📄 PDF: {filepath}\n📝 Word: {docx_path}")
                 _open_pdf(filepath)
             except Exception as exc:
                 messagebox.showerror("Error", f"PDF generation failed:\n{exc}")
+
+        def _generate_word():
+            from tkinter import filedialog
+            filepath = filedialog.asksaveasfilename(
+                defaultextension=".docx", initialfile="Registration_ID_Card.docx",
+                initialdir=SCRIPT_DIR, filetypes=[("Word Document", "*.docx")],
+                title="Save Card Word Document As")
+            if not filepath: return
+            try:
+                tmp_pdf = os.path.join(SCRIPT_DIR, "_card_temp.pdf")
+                generate_pdf(tmp_pdf)
+                convert_pdf_to_docx(tmp_pdf, filepath)
+                messagebox.showinfo("Done", f"Word Card saved:\n{filepath}")
+                open_file(filepath)
+            except Exception as exc:
+                messagebox.showerror("Error", f"Word generation failed:\n{exc}")
 
         def _print_now():
             tmp = os.path.join(SCRIPT_DIR, "_card_temp.pdf")
             try:
                 generate_pdf(tmp)
+                convert_pdf_to_docx(tmp)
                 _open_pdf(tmp)
             except Exception as exc:
-                messagebox.showerror("Error", f"Could not open PDF:\n{exc}")
+                messagebox.showerror("Error", f"Could not open file:\n{exc}")
 
         def close():
-            self.app.registration()
+            from registration import Registration
+            r = Registration(self.app)
+            r.registration_workspace()
 
-        tk.Button(btn_bar, text="📄  Generate PDF", font=("Arial", 11), width=16,
-                  bg="#1565C0", fg="white", command=_generate_pdf).grid(row=0, column=0, padx=8)
-        tk.Button(btn_bar, text="🖨  Open / Print", font=("Arial", 11), width=16,
-                  bg="#2E7D32", fg="white", command=_print_now).grid(row=0, column=1, padx=8)
+        tk.Button(btn_bar, text="📄 Generate PDF", font=("Arial", 11), width=14,
+                  bg="#1565C0", fg="white", command=_generate_pdf).grid(row=0, column=0, padx=6)
+        tk.Button(btn_bar, text="📝 Generate Word", font=("Arial", 11), width=14,
+                  bg="#673AB7", fg="white", command=_generate_word).grid(row=0, column=1, padx=6)
+        tk.Button(btn_bar, text="🖨 Open / Print", font=("Arial", 11), width=14,
+                  bg="#2E7D32", fg="white", command=_print_now).grid(row=0, column=2, padx=6)
         tk.Button(btn_bar, text="Close",            font=("Arial", 11), width=10,
-                  command=close).grid(row=0, column=2, padx=8)
+                  bg="#ED350E", fg="white", command=close).grid(row=0, column=3, padx=6)
                   
         draw_page_preview()
     
@@ -435,9 +517,7 @@ class Card:
         SCRIPT_DIR  = os.path.dirname(os.path.abspath(__file__))
         LOGO_PATH   = os.path.join(SCRIPT_DIR, "Dental_logo.png")
 
-        CLINIC_NAME  = "ANUPAM DENTAL CLINIC"
-        CLINIC_LINE  = "West Gate Vaikom - 686141, Ph : 216878 Res : 216858"
-        CLINIC_HOURS = "Clinic Hours :10:00 AM to 07:00 PM, Tuesday Holiday"
+        CLINIC_NAME, CLINIC_LINE, CLINIC_HOURS = get_clinic_card_info(self.app)
         FIELD_LABELS = ["Reg No", "PID", "Date", "Age", "Name", "Address"]
         CARD_ASPECT  = 716 / 492
         INK          = HexColor("#1a1a1a")
@@ -486,7 +566,7 @@ class Card:
                 return y0 + h * (1 - frac)
 
             c.setLineWidth(0.4)
-            c.roundRect(x0, y0, w, h, 2*mm, stroke=1, fill=0)
+            c.rect(x0, y0, w, h, stroke=1, fill=0)
             tt = top_y(0.06); tb = top_y(0.20)
             bm = w * 0.035
             c.setLineWidth(0.9)
@@ -754,20 +834,7 @@ class Card:
         btn_bar.pack(pady=8)
 
         def _open_pdf(path):
-            import subprocess, sys
-            try:
-                if hasattr(os, "startfile"):
-                    os.startfile(path)
-                elif sys.platform.startswith("linux"):
-                    subprocess.Popen(["xdg-open", path])
-                elif sys.platform == "darwin":
-                    subprocess.Popen(["open", path])
-                else:
-                    subprocess.Popen(["cmd", "/c", "start", "", path])
-            except Exception as exc:
-                messagebox.showwarning(
-                    "Open PDF",
-                    f"Could not open the PDF automatically.\n{exc}")
+            open_file(path)
 
         def _generate_pdf():
             from tkinter import filedialog
@@ -781,30 +848,54 @@ class Card:
                 return
             try:
                 generate_pdf(filepath)
-                messagebox.showinfo("Done", f"8-up card sheet saved:\n{filepath}")
+                docx_path = convert_pdf_to_docx(filepath)
+                messagebox.showinfo("Done", f"8-up card sheet saved successfully:\n📄 PDF: {filepath}\n📝 Word: {docx_path}")
                 _open_pdf(filepath)
             except Exception as exc:
                 messagebox.showerror("Error", f"PDF generation failed:\n{exc}")
+
+        def _generate_word():
+            from tkinter import filedialog
+            filepath = filedialog.asksaveasfilename(
+                defaultextension=".docx",
+                initialfile="Anupam_Dental_8up_Cards.docx",
+                initialdir=SCRIPT_DIR,
+                filetypes=[("Word Document", "*.docx")],
+                title="Save 8-Up Word Sheet As")
+            if not filepath:
+                return
+            try:
+                tmp_pdf = os.path.join(SCRIPT_DIR, "_8up_cards_temp.pdf")
+                generate_pdf(tmp_pdf)
+                convert_pdf_to_docx(tmp_pdf, filepath)
+                messagebox.showinfo("Done", f"8-up Word sheet saved:\n{filepath}")
+                open_file(filepath)
+            except Exception as exc:
+                messagebox.showerror("Error", f"Word sheet generation failed:\n{exc}")
 
         def _print_now():
             tmp = os.path.join(SCRIPT_DIR, "_8up_cards_temp.pdf")
             try:
                 generate_pdf(tmp)
+                convert_pdf_to_docx(tmp)
                 _open_pdf(tmp)
             except Exception as exc:
-                messagebox.showerror("Error", f"Could not open PDF:\n{exc}")
+                messagebox.showerror("Error", f"Could not open file:\n{exc}")
 
         def _close():
             self.app.personal()
 
-        tk.Button(btn_bar, text="Generate PDF", font=("Arial", 11),
-                  width=18, bg="#1565C0", fg="white",
-                  command=_generate_pdf).grid(row=0, column=0, padx=8)
-        tk.Button(btn_bar, text="Open / Print", font=("Arial", 11),
-                  width=18, bg="#2E7D32", fg="white",
-                  command=_print_now).grid(row=0, column=1, padx=8)
+        tk.Button(btn_bar, text="📄 Generate PDF", font=("Arial", 11),
+                  width=14, bg="#1565C0", fg="white",
+                  command=_generate_pdf).grid(row=0, column=0, padx=6)
+        tk.Button(btn_bar, text="📝 Generate Word", font=("Arial", 11),
+                  width=14, bg="#673AB7", fg="white",
+                  command=_generate_word).grid(row=0, column=1, padx=6)
+        tk.Button(btn_bar, text="🖨 Open / Print", font=("Arial", 11),
+                  width=14, bg="#2E7D32", fg="white",
+                  command=_print_now).grid(row=0, column=2, padx=6)
         tk.Button(btn_bar, text="Close", font=("Arial", 11),
                   width=10, bg="#ED350E", fg="white",
-                  command=_close).grid(row=0, column=2, padx=8)
+                  command=_close).grid(row=0, column=3, padx=6)
 
         draw_page_preview()

@@ -1,6 +1,6 @@
 import os
 import sqlite3
-import sys
+import sys  
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from PIL import Image, ImageTk
@@ -34,7 +34,7 @@ class dental:
 
         self.menu()
         self.create_nav()
-        self.personal()
+        self.registration()
         self.root.mainloop() 
 
     def menu(self):
@@ -119,7 +119,7 @@ class dental:
         tk.Label(self.workspace,text="Kerala - 686141",font=("Arial", 20,"bold")).place(x=570, y=505)
 
     def registration(self):
-        Registration(self)
+        Registration(self)  
 
     def personal(self):
         Personal(self)

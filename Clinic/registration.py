@@ -148,6 +148,19 @@ class Registration:
             self.Doctor_combo.set(doctor_names[0])
         self.Doctor_combo.grid(row=0, column=1, padx=(0, 20), pady=10, sticky='w')
 
+        def on_doctor_combo_change(event=None):
+            sel_doc = self.Doctor_combo.get().strip()
+            if hasattr(self, 'patient_tree') and self.patient_tree:
+                selected = self.patient_tree.selection()
+                if selected:
+                    for item in selected:
+                        vals = list(self.patient_tree.item(item)["values"])
+                        if len(vals) >= 5:
+                            vals[4] = sel_doc
+                            self.patient_tree.item(item, values=vals)
+
+        self.Doctor_combo.bind("<<ComboboxSelected>>", on_doctor_combo_change)
+
         # --- Row 1: Patient Details ---
         Patient_Name = tk.Label(reg, text="Patient Name:", font=('Arial',8))
         Patient_Name.grid(row=0, column=2, padx=(20, 5), pady=10, sticky='e')
@@ -374,6 +387,32 @@ class Registration:
                 "email": self.entry_email.get().strip()
             }
             
+            # Save treatments from treatment_tree if any
+            if hasattr(self, 'treatment_tree') and self.treatment_tree:
+                trts = []
+                for child in self.treatment_tree.get_children():
+                    vals = self.treatment_tree.item(child)["values"]
+                    if vals:
+                        t_name = str(vals[1]) if len(vals) > 1 and vals[1] else ""
+                        t_doc = str(vals[2]) if len(vals) > 2 and vals[2] else self.Doctor_combo.get().strip()
+                        if t_name:
+                            trts.append(("-", t_name, 0.0, t_doc))
+                if trts:
+                    try:
+                        conn = get_db_connection(self.app)
+                        cursor = conn.cursor()
+                        b_date = datetime.now().strftime("%d-%m-%Y")
+                        cursor.execute("INSERT INTO Bills (Patient_ID, Reg_No, Date, Total_Amount, Balance_Due, Comments) VALUES (?, ?, ?, ?, ?, ?)",
+                                       (pid_str, reg_str, b_date, 0.0, 0.0, ""))
+                        bill_id = cursor.lastrowid
+                        for tooth, trt, amt, doc in trts:
+                            cursor.execute("INSERT INTO Bill_Treatments (Bill_ID, Tooth_No, Treatment, Amount, Doctor, Type) VALUES (?, ?, ?, ?, ?, ?)",
+                                           (bill_id, tooth, trt, amt, doc, "Treatment"))
+                        conn.commit()
+                        conn.close()
+                    except Exception as e:
+                        print(f"Error saving appointment treatment: {e}")
+            
             # Pre-populate billing entry boxes
             self.bill_patientid.delete(0, 'end')
             self.bill_patientid.insert(0, self.format_patient_id(self.patient_data["patientid"]))
@@ -395,11 +434,17 @@ class Registration:
             self.bill_email.delete(0, 'end')
             self.bill_email.insert(0, self.patient_data["email"])
 
-            # Refresh patient tree
+            # Refresh patient tree (only today's appointments)
+            today_str = datetime.now().strftime("%d-%m-%Y")
+            selected_doc = self.Doctor_var.get().strip() if hasattr(self, 'Doctor_var') and self.Doctor_var else ""
             for child in patient_tree.get_children():
                 patient_tree.delete(child)
             for row in get_all_appointments(self.app):
-                patient_tree.insert("", "end", values=(row[0], row[1], row[5], "", ""))
+                app_date = row[9] if len(row) > 9 and row[9] else ""
+                if app_date == today_str:
+                    treatment, doc = get_patient_latest_treatment(self.app, row[0])
+                    doc_name = doc if doc else selected_doc
+                    patient_tree.insert("", "end", values=(row[0], row[1], row[5], treatment, doc_name))
 
             # Refresh history tree
             for child in history_tree.get_children():
@@ -478,6 +523,8 @@ class Registration:
         for col in acc_columns:
             self.acc_tree.heading(col, text=col)
             self.acc_tree.column(col, width=60)
+        self.acc_tree.tag_configure("debit_row", foreground="#D32F2F")
+        self.acc_tree.tag_configure("credit_row", foreground="#2E7D32")
         
         acc_scroll = ttk.Scrollbar(acc, orient="vertical", command=self.acc_tree.yview)
         acc_scroll.pack(side="right", fill="y")
@@ -496,6 +543,7 @@ class Registration:
         # --- Bottom Frame: Patient Appointment Tree ---
         columns = ("Patient ID", "Patient Name", "Address 1", "Treatment", "Doctor Name")
         patient_tree = ttk.Treeview(app, columns=columns, show="headings", height=12)
+        self.patient_tree = patient_tree
 
         scroll = ttk.Scrollbar(app, orient="vertical", command=patient_tree.yview)
         scroll.pack(side="right", fill="y")
@@ -507,9 +555,14 @@ class Registration:
             patient_tree.heading(col, text=col)
             patient_tree.column(col, width=100)
 
+        today_str = datetime.now().strftime("%d-%m-%Y")
+        selected_doc = self.Doctor_var.get().strip() if hasattr(self, 'Doctor_var') and self.Doctor_var else ""
         for row in get_all_appointments(self.app):
-            # treatment, doc = get_patient_latest_treatment(self.app, row[0])
-            patient_tree.insert("", "end", values=(row[0], row[1], row[5]))
+            app_date = row[9] if len(row) > 9 and row[9] else ""
+            if app_date == today_str:
+                treatment, doc = get_patient_latest_treatment(self.app, row[0])
+                doc_name = doc if doc else selected_doc
+                patient_tree.insert("", "end", values=(row[0], row[1], row[5], treatment, doc_name))
 
         history=tk.Frame(middle_frame)
         history.pack(fill="both",expand="True",pady=10)
@@ -570,6 +623,10 @@ class Registration:
                 self.entry_mobile1.insert(0, row[7] if row[7] else "")
                 self.entry_mobile2.delete(0, 'end')
                 self.entry_mobile2.insert(0, row[8] if row[8] else "")
+
+                # Connect Doctor Name column (values[4]) to self.Doctor_var
+                if len(values) > 4 and values[4]:
+                    self.Doctor_var.set(str(values[4]))
                 self.patient_data = {
                     "patientid": str(row[0]),
                     "regno": f"REG-{row[0]:04d}",
@@ -633,15 +690,26 @@ class Registration:
             conn.close()
 
             balance = 0.0
+            has_today = False
+            today_str = datetime.now().strftime("%d-%m-%Y")
+
             for row in rows:
                 date_val, debit_val, credit_val, part_val, bal_val = row
                 d_num = float(debit_val) if debit_val else 0.0
                 c_num = float(credit_val) if credit_val else 0.0
                 balance += d_num - c_num
-                self.acc_tree.insert("", "end", values=(date_val, f"{d_num:.2f}", f"{c_num:.2f}", part_val, f"{balance:.2f}"))
+                if str(date_val).strip() == today_str:
+                    has_today = True
+                row_tag = "debit_row" if d_num > 0 or c_num == 0 else "credit_row"
+                self.acc_tree.insert("", "end", values=(date_val, f"{d_num:.2f}", f"{c_num:.2f}", part_val, f"{balance:.2f}"), tags=(row_tag,))
+
+            if rows and not has_today:
+                row_tag = "debit_row" if balance > 0 else "credit_row"
+                self.acc_tree.insert("", "end", values=(today_str, "0.00", "0.00", "Balance B/F", f"{balance:.2f}"), tags=(row_tag,))
 
             if hasattr(self, 'balance_label'):
-                self.balance_label.config(text=f"Balance: ₹{balance:.2f}")
+                lbl_color = "#D32F2F" if balance > 0 else "#2E7D32"
+                self.balance_label.config(text=f"Balance: ₹{balance:.2f}", fg=lbl_color)
         except Exception as e:
             print(f"Error loading accounts: {e}")
 

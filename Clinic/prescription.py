@@ -7,6 +7,7 @@ class Prescription:
     def __init__(self, app):
         self.app = app
         self.patient_data = getattr(app, "patient_data", {})
+        self.ensure_tables_exist()
         self.app.clear_workspace()
         self.app.workspace = tk.Frame(self.app.root, bd=3, relief="solid")
         self.app.workspace.pack(padx=10, pady=10, fill="both", expand=True)
@@ -16,6 +17,65 @@ class Prescription:
             return self.app.get_db_connection()
         script_dir = os.path.dirname(os.path.abspath(__file__))
         return sqlite3.connect(os.path.join(script_dir, "dental.db"))
+
+    def ensure_tables_exist(self):
+        try:
+            conn = self.get_db_connection()
+            c = conn.cursor()
+            c.execute("""
+                CREATE TABLE IF NOT EXISTS Medicines (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    Category TEXT,
+                    Type TEXT,
+                    Product_Name TEXT,
+                    Brand_Name TEXT,
+                    Strength TEXT,
+                    Dosage TEXT,
+                    Frequency TEXT,
+                    Rate REAL,
+                    Duration TEXT,
+                    Ingredients TEXT,
+                    Contra_Indications TEXT
+                )
+            """)
+            c.execute("""
+                CREATE TABLE IF NOT EXISTS Prescriptions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    Date TEXT,
+                    Patient_ID TEXT,
+                    Doctor_Name TEXT,
+                    Notes TEXT
+                )
+            """)
+            c.execute("""
+                CREATE TABLE IF NOT EXISTS Allergies (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    Allergic_Medicine TEXT
+                )
+            """)
+            c.execute("""
+                CREATE TABLE IF NOT EXISTS Doctors (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    First_Name TEXT,
+                    Last_Name TEXT
+                )
+            """)
+            c.execute("""
+                CREATE TABLE IF NOT EXISTS Treatment_Fees (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    Treatment TEXT
+                )
+            """)
+            c.execute("""
+                CREATE TABLE IF NOT EXISTS Diseases (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    Disease TEXT
+                )
+            """)
+            conn.commit()
+            conn.close()
+        except sqlite3.Error as e:
+            print(f"Error initializing database tables: {e}")
 
     def prescription(self):
         tk.Label(self.app.workspace, text="Prescription", font=("Arial", 10, "bold"), fg="navy").pack(pady=2)
@@ -49,10 +109,11 @@ class Prescription:
         btn_Medicine = tk.Button(left_frame, text="Edit Medicine List", font=("Arial", 10, "bold"), width=15, command=self.edit_medicine)
         btn_Medicine.grid(row=2, column=1, padx=5, pady=5)
 
-        self.treatment_type = ttk.Treeview(left_frame, columns=("Type",), show="headings", height=5)
-        self.treatment_type.grid(row=3, column=0, columnspan=2, padx=10, pady=10, sticky="ew")
-        self.treatment_type.heading("Type", text="Type")
-        self.treatment_type.column("Type", width=300, anchor="center")
+        self.med_type = ttk.Treeview(left_frame, columns=("Type",), show="headings", height=5)
+        self.med_type.grid(row=3, column=0, columnspan=2, padx=10, pady=10, sticky="ew")
+        self.med_type.heading("Type", text="Type")
+        self.med_type.column("Type", width=300, anchor="center")
+        self.med_type.bind("<ButtonRelease-1>", self.on_med_type_select)
 
         self.allergies = ttk.Treeview(left_frame, columns=("Allergic Medicine",), show="headings", height=2)
         self.allergies.grid(row=4, column=0, columnspan=2, padx=10, pady=10, sticky="ew")
@@ -146,22 +207,31 @@ class Prescription:
                 self.doctor_combo.current(0)
             
             # Categories (Medicines)
-            c.execute("SELECT DISTINCT Category FROM Medicines")
+            c.execute("SELECT DISTINCT Category FROM Medicines WHERE Category IS NOT NULL AND Category != ''")
             categories = c.fetchall()
             for cat in categories:
                 self.category_tree.insert("", "end", values=(cat[0],))
+
+            # Types (Medicines)
+            try:
+                c.execute("SELECT DISTINCT Type FROM Medicines WHERE Type IS NOT NULL AND Type != ''")
+                types = c.fetchall()
+                for t in types:
+                    self.med_type.insert("", "end", values=(t[0],))
+            except sqlite3.Error:
+                pass
+
+            # Initial Medicine Tree Load (All Medicines)
+            c.execute("SELECT Product_Name, Brand_Name, Strength, Dosage, Frequency, Rate, Duration, Ingredients FROM Medicines")
+            all_meds = c.fetchall()
+            for med in all_meds:
+                self.medicine_tree.insert("", "end", values=med)
 
             # Allergies
             c.execute("SELECT Allergic_Medicine FROM Allergies")
             allergies_list = c.fetchall()
             for al in allergies_list:
                 self.allergies.insert("", "end", values=(al[0],))
-
-            # Treatment Types
-            c.execute("SELECT Treatment FROM Treatment_Fees")
-            treatments = c.fetchall()
-            for t in treatments:
-                self.treatment_type.insert("", "end", values=(t[0],))
 
             # Diseases
             c.execute("SELECT Disease FROM Diseases")
@@ -194,6 +264,27 @@ class Prescription:
         except sqlite3.Error as e:
             messagebox.showerror("Database Error", f"Error loading medicines: {e}")
 
+    def on_med_type_select(self, event):
+        selected = self.med_type.selection()
+        if not selected:
+            return
+        mtype = self.med_type.item(selected[0])['values'][0]
+        
+        # Clear existing medicine tree
+        for item in self.medicine_tree.get_children():
+            self.medicine_tree.delete(item)
+
+        try:
+            conn = self.get_db_connection()
+            c = conn.cursor()
+            c.execute("SELECT Product_Name, Brand_Name, Strength, Dosage, Frequency, Rate, Duration, Ingredients FROM Medicines WHERE Type=?", (mtype,))
+            meds = c.fetchall()
+            for med in meds:
+                self.medicine_tree.insert("", "end", values=med)
+            conn.close()
+        except sqlite3.Error as e:
+            messagebox.showerror("Database Error", f"Error loading medicines: {e}")
+
     def on_medicine_double_click(self, event):
         selected = self.medicine_tree.selection()
         if not selected:
@@ -216,8 +307,6 @@ class Prescription:
             return
             
         try:
-            # Here you would typically generate a PDF or print directly.
-            # We'll save it to the DB as a record and show a success message.
             conn = self.get_db_connection()
             c = conn.cursor()
             
@@ -235,35 +324,140 @@ class Prescription:
             conn.commit()
             conn.close()
             
-            messagebox.showinfo("Success", "Prescription saved and sent to printer successfully!")
-        except sqlite3.Error as e:
-            messagebox.showerror("Database Error", f"Error saving prescription: {e}")
+            # Generate Plain Prescription PDF directly (only PDF)
+            from letter_paper import Letter_Paper
+            lp = Letter_Paper(self.app)
+            lp.patient_data = getattr(self, 'patient_data', {})
+            pdf_path = lp.Plain_Priscription_PDF_only()
+            
+            messagebox.showinfo("Success", f"Prescription saved and PDF generated successfully:\n{pdf_path}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Error saving/printing prescription: {e}")
     
     def load_medicine_edit_data(self):
         try:
             conn = self.get_db_connection()
             c = conn.cursor()
             
-            c.execute("SELECT DISTINCT Category FROM Medicines")
+            # Ensure optional columns exist in Medicines table
+            try:
+                c.execute("ALTER TABLE Medicines ADD COLUMN Type TEXT")
+            except sqlite3.Error:
+                pass
+            try:
+                c.execute("ALTER TABLE Medicines ADD COLUMN Contra_Indications TEXT")
+            except sqlite3.Error:
+                pass
+            conn.commit()
+
+            for tree in [self.med_tree_cat, self.med_tree_type, self.med_tree_ing, self.med_tree_contra]:
+                for item in tree.get_children():
+                    tree.delete(item)
+            if hasattr(self, 'product_tree'):
+                for item in self.product_tree.get_children():
+                    self.product_tree.delete(item)
+
+            c.execute("SELECT DISTINCT Category FROM Medicines WHERE Category IS NOT NULL AND Category != ''")
             for cat in c.fetchall():
                 self.med_tree_cat.insert("", "end", values=(cat[0],))
                 
-            c.execute("SELECT DISTINCT Ingredients FROM Medicines WHERE Ingredients IS NOT NULL")
+            c.execute("SELECT DISTINCT Ingredients FROM Medicines WHERE Ingredients IS NOT NULL AND Ingredients != ''")
             for ing in c.fetchall():
                 self.med_tree_ing.insert("", "end", values=(ing[0],))
 
-            # Try to populate Type column if present in the Medicines table
-            try:
-                c.execute("SELECT DISTINCT Type FROM Medicines WHERE Type IS NOT NULL")
-                for t in c.fetchall():
-                    self.med_tree_type.insert("", "end", values=(t[0],))
-            except sqlite3.Error:
-                # If the Medicines table has no Type column, ignore silently
-                pass
+            c.execute("SELECT DISTINCT Type FROM Medicines WHERE Type IS NOT NULL AND Type != ''")
+            for t in c.fetchall():
+                self.med_tree_type.insert("", "end", values=(t[0],))
+
+            c.execute("SELECT DISTINCT Contra_Indications FROM Medicines WHERE Contra_Indications IS NOT NULL AND Contra_Indications != ''")
+            for ci in c.fetchall():
+                self.med_tree_contra.insert("", "end", values=(ci[0],))
+
+            if hasattr(self, 'product_tree'):
+                try:
+                    c.execute("SELECT Category, Type, Product_Name, Brand_Name, Strength, Dosage, Frequency, Rate, Duration, Ingredients, Contra_Indications FROM Medicines")
+                    for row in c.fetchall():
+                        self.product_tree.insert("", "end", values=row)
+                except sqlite3.Error:
+                    pass
                 
             conn.close()
         except sqlite3.Error as e:
             messagebox.showerror("Database Error", f"Error loading edit lists: {e}")
+
+    def filter_product_tree(self, col_idx, search_val):
+        if not hasattr(self, 'product_tree'):
+            return
+        try:
+            conn = self.get_db_connection()
+            c = conn.cursor()
+            for item in self.product_tree.get_children():
+                self.product_tree.delete(item)
+            
+            c.execute("SELECT Category, Type, Product_Name, Brand_Name, Strength, Dosage, Frequency, Rate, Duration, Ingredients, Contra_Indications FROM Medicines")
+            for row in c.fetchall():
+                val_at_col = str(row[col_idx] if row[col_idx] is not None else "").strip()
+                if search_val.lower() in val_at_col.lower():
+                    self.product_tree.insert("", "end", values=row)
+            conn.close()
+        except sqlite3.Error:
+            pass
+
+    def on_edit_cat_select(self, event):
+        selected = self.med_tree_cat.selection()
+        if not selected:
+            return
+        cat_val = self.med_tree_cat.item(selected[0])['values'][0]
+        self.cat_var.set(cat_val)
+        self.filter_product_tree(0, str(cat_val))
+
+    def on_edit_type_select(self, event):
+        selected = self.med_tree_type.selection()
+        if not selected:
+            return
+        type_val = self.med_tree_type.item(selected[0])['values'][0]
+        self.type_var.set(type_val)
+        self.filter_product_tree(1, str(type_val))
+
+    def on_edit_ing_select(self, event):
+        selected = self.med_tree_ing.selection()
+        if not selected:
+            return
+        ing_val = self.med_tree_ing.item(selected[0])['values'][0]
+        self.ing_var.set(ing_val)
+        self.filter_product_tree(9, str(ing_val))
+
+    def on_edit_contra_select(self, event):
+        selected = self.med_tree_contra.selection()
+        if not selected:
+            return
+        contra_val = self.med_tree_contra.item(selected[0])['values'][0]
+        self.comment_var.set(contra_val)
+        self.filter_product_tree(10, str(contra_val))
+
+    def on_product_tree_select(self, event):
+        selected = self.product_tree.selection()
+        if not selected:
+            return
+        vals = self.product_tree.item(selected[0])['values']
+        if len(vals) >= 1:
+            self.cat_var.set(vals[0] if vals[0] is not None else "")
+        if len(vals) >= 2:
+            self.type_var.set(vals[1] if vals[1] is not None else "")
+        if len(vals) >= 3:
+            self.prod_var.set(vals[2] if vals[2] is not None else "")
+        if len(vals) >= 4:
+            self.brand_var.set(vals[3] if vals[3] is not None else "")
+        if len(vals) >= 5:
+            self.strength_var.set(vals[4] if vals[4] is not None else "")
+        if len(vals) >= 6:
+            self.dosage_var.set(vals[5] if vals[5] is not None else "")
+        if len(vals) >= 8:
+            self.rate_var.set(vals[7] if vals[7] is not None else "")
+        if len(vals) >= 10:
+            self.ing_var.set(vals[9] if vals[9] is not None else "")
+        if len(vals) >= 11:
+            self.comment_var.set(vals[10] if vals[10] is not None else "")
 
     def add_category(self):
         category = self.cat_var.get()
@@ -274,7 +468,7 @@ class Prescription:
         rate = self.rate_var.get()
         ing = self.ing_var.get()
         mtype = self.type_var.get()
-        # Frequency and duration default or from form (omitted in form but required in schema, so we default)
+        comment = self.comment_var.get()
         
         if not category or not prod:
             messagebox.showwarning("Warning", "Category and Product Name are required!")
@@ -284,38 +478,40 @@ class Prescription:
             rate_val = float(rate) if rate else 0.0
             conn = self.get_db_connection()
             c = conn.cursor()
+
+            # Ensure optional columns exist
+            try:
+                c.execute("ALTER TABLE Medicines ADD COLUMN Type TEXT")
+            except sqlite3.Error:
+                pass
+            try:
+                c.execute("ALTER TABLE Medicines ADD COLUMN Contra_Indications TEXT")
+            except sqlite3.Error:
+                pass
+            conn.commit()
+
             c.execute("""
-                INSERT INTO Medicines (Category, Product_Name, Brand_Name, Strength, Dosage, Frequency, Rate, Duration, Ingredients)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (category, prod, brand, strength, dosage, "Daily", rate_val, "1 week", ing))
+                INSERT INTO Medicines (Category, Type, Product_Name, Brand_Name, Strength, Dosage, Frequency, Rate, Duration, Ingredients, Contra_Indications)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (category, mtype, prod, brand, strength, dosage, "Daily", rate_val, "1 week", ing, comment))
             conn.commit()
             conn.close()
             
             messagebox.showinfo("Success", "Medicine added successfully!")
             
-            # Clear form
+            # Clear form entries
             self.cat_var.set("")
+            self.type_var.set("")
             self.prod_var.set("")
             self.brand_var.set("")
             self.strength_var.set("")
             self.dosage_var.set("")
             self.rate_var.set("")
             self.ing_var.set("")
+            self.comment_var.set("")
             
-            # Refresh tree
-            for item in self.med_tree_cat.get_children():
-                self.med_tree_cat.delete(item)
-            for item in self.med_tree_ing.get_children():
-                self.med_tree_ing.delete(item)
-            for item in self.med_tree_type.get_children():
-                self.med_tree_type.delete(item)
+            # Refresh all trees
             self.load_medicine_edit_data()
-
-            # If the DB/table doesn't store Type, still add the entered Type to the Type treeview
-            if mtype:
-                existing_types = [self.med_tree_type.item(i)['values'][0] for i in self.med_tree_type.get_children()]
-                if mtype not in existing_types:
-                    self.med_tree_type.insert("", "end", values=(mtype,))
             
         except ValueError:
             messagebox.showerror("Error", "Rate must be a number.")
@@ -327,11 +523,17 @@ class Prescription:
         self.app.workspace = tk.Frame(self.app.root, bd=3, relief="solid")
         self.app.workspace.pack(padx=10, pady=10, fill="both", expand=True)
 
-        left_frame = tk.Frame(self.app.workspace)
+        top_frame = tk.Frame(self.app.workspace)
+        top_frame.pack(side="top", fill="x", padx=5, pady=5)
+
+        left_frame = tk.Frame(top_frame)
         left_frame.pack(side="left", fill="y", padx=5, pady=5)
 
-        right_frame = tk.Frame(self.app.workspace)
+        right_frame = tk.Frame(top_frame)
         right_frame.pack(side="left", fill="both", expand=True, padx=5, pady=5)
+
+        bottom_frame = tk.LabelFrame(self.app.workspace, text="Medicine Inventory List", font=("Arial", 10, "bold"))
+        bottom_frame.pack(side="bottom", fill="both", expand=True, padx=5, pady=5)
 
         # Variables for form
         self.cat_var = tk.StringVar()
@@ -377,24 +579,45 @@ class Prescription:
         btn_close = tk.Button(left_frame, text="Close", font=("Arial", 10, "bold"), width=15, command=self.close)
         btn_close.grid(row=9,column=1,padx=5,pady=5)
 
-        self.med_tree_cat = ttk.Treeview(right_frame,columns=("Category"),show="headings")
+        self.med_tree_cat = ttk.Treeview(right_frame,columns=("Category",),show="headings", height=4)
         self.med_tree_cat.grid(row=0,column=0,padx=5,pady=5, sticky="ew")
         self.med_tree_cat.heading("Category", text="Category")
 
-        self.med_tree_type = ttk.Treeview(right_frame, columns=("Type",), show="headings", height=5)
+        self.med_tree_type = ttk.Treeview(right_frame, columns=("Type",), show="headings", height=4)
         self.med_tree_type.grid(row=0, column=1, padx=10, pady=10, sticky="ew")
         self.med_tree_type.heading("Type", text="Type")
         self.med_tree_type.column("Type", width=300, anchor="center")  
 
-        self.med_tree_ing = ttk.Treeview(right_frame, columns=("Ingredients",), show="headings", height=5)
+        self.med_tree_ing = ttk.Treeview(right_frame, columns=("Ingredients",), show="headings", height=4)
         self.med_tree_ing.grid(row=1, column=0, padx=10, pady=10, sticky="ew")
         self.med_tree_ing.heading("Ingredients", text="Ingredients")
         self.med_tree_ing.column("Ingredients", width=300, anchor="center") 
 
-        self.med_tree_contra = ttk.Treeview(right_frame, columns=("Contra Indications",), show="headings", height=5)
+        self.med_tree_contra = ttk.Treeview(right_frame, columns=("Contra Indications",), show="headings", height=4)
         self.med_tree_contra.grid(row=1, column=1, padx=10, pady=10, sticky="ew")
         self.med_tree_contra.heading("Contra Indications", text="Contra Indications")
         self.med_tree_contra.column("Contra Indications", width=300, anchor="center")
+
+        columns = ("Category", "Type", "Product Name", "Brand Name", "Strength", "Dosage", "Rate", "Duration", "Ingredients", "Contra Indications")
+        self.product_tree = ttk.Treeview(bottom_frame, columns=columns, show="headings")
+        
+        prod_vsb = ttk.Scrollbar(bottom_frame, orient="vertical", command=self.product_tree.yview)
+        prod_hsb = ttk.Scrollbar(bottom_frame, orient="horizontal", command=self.product_tree.xview)
+        self.product_tree.configure(yscrollcommand=prod_vsb.set, xscrollcommand=prod_hsb.set)
+
+        prod_vsb.pack(side="right", fill="y")
+        prod_hsb.pack(side="bottom", fill="x")
+        self.product_tree.pack(side="left", fill="both", expand=True)
+
+        for col in columns:
+            self.product_tree.heading(col, text=col)
+            self.product_tree.column(col, width=110, anchor="center")
+
+        self.med_tree_cat.bind("<<TreeviewSelect>>", self.on_edit_cat_select)
+        self.med_tree_type.bind("<<TreeviewSelect>>", self.on_edit_type_select)
+        self.med_tree_ing.bind("<<TreeviewSelect>>", self.on_edit_ing_select)
+        self.med_tree_contra.bind("<<TreeviewSelect>>", self.on_edit_contra_select)
+        self.product_tree.bind("<<TreeviewSelect>>", self.on_product_tree_select)
 
         self.load_medicine_edit_data()
 

@@ -437,6 +437,38 @@ class Bill:
                 self.bill_doctor_combo.set('')
                 update_bill_total()
 
+                # Save treatment to DB with datenow
+                try:
+                    conn = get_db_connection(self.app)
+                    cursor = conn.cursor()
+                    pid = self.bill_patientid.get().strip() if hasattr(self, 'bill_patientid') else ""
+                    reg = self.bill_regno.get().strip() if hasattr(self, 'bill_regno') else ""
+                    datenow = datetime.now().strftime("%d-%m-%Y")
+                    
+                    try:
+                        amt_val = float(amount) if amount else 0.0
+                    except (ValueError, TypeError):
+                        amt_val = 0.0
+
+                    cursor.execute("SELECT id, Total_Amount FROM Bills WHERE Patient_ID = ? OR Reg_No = ? ORDER BY id DESC LIMIT 1", (pid, reg))
+                    bill_row = cursor.fetchone()
+                    if bill_row:
+                        bill_id = bill_row[0]
+                        curr_total = bill_row[1] if bill_row[1] else 0.0
+                        new_total = curr_total + amt_val
+                        cursor.execute("UPDATE Bills SET Total_Amount = ?, Balance_Due = ? WHERE id = ?", (new_total, new_total, bill_id))
+                    else:
+                        cursor.execute("INSERT INTO Bills (Patient_ID, Reg_No, Date, Total_Amount, Balance_Due, Comments) VALUES (?, ?, ?, ?, ?, ?)",
+                                       (pid, reg, datenow, amt_val, amt_val, ""))
+                        bill_id = cursor.lastrowid
+
+                    cursor.execute("INSERT INTO Bill_Treatments (Bill_ID, Tooth_No, Treatment, Amount, Doctor, Type) VALUES (?, ?, ?, ?, ?, ?)",
+                                   (bill_id, tooth if tooth else "-", treatment, amt_val, doctor, "Treatment"))
+                    conn.commit()
+                    conn.close()
+                except Exception as e:
+                    print(f"Error saving treatment on add: {e}")
+
         def remove_treatment():
             selected = bill_tree.selection()
             if selected:
@@ -468,13 +500,9 @@ class Bill:
             tk.Button(detail_win, text="Close", font=("Arial", 11),
                       command=detail_win.destroy).pack(pady=10)
 
-        # Restore treatments if any
+        # Initialize empty treatments_list (treatments added only via "Add Treatment" button)
         if not hasattr(self, 'treatments_list'):
             self.treatments_list = []
-        else:
-            for item in self.treatments_list:
-                bill_tree.insert("", "end", values=item)
-            update_bill_total()
 
         def save_and_go_to_details():
             self.patient_data = {
@@ -498,6 +526,48 @@ class Bill:
                 amount = str(raw_values[2]) if len(raw_values) > 2 else "0.00"
                 doctor = str(raw_values[3]) if len(raw_values) > 3 else ""
                 self.treatments_list.append((tooth, treatment, amount, "", doctor))
+
+            # Save bill & bill treatments to database
+            try:
+                conn = get_db_connection(self.app)
+                cursor = conn.cursor()
+                pid = self.patient_data.get("patientid", "").strip()
+                reg = self.patient_data.get("regno", "").strip()
+                b_date = datetime.now().strftime("%d-%m-%Y")
+                
+                total_amt = 0.0
+                for item in self.treatments_list:
+                    try:
+                        total_amt += float(item[2])
+                    except (ValueError, TypeError):
+                        pass
+
+                cursor.execute("SELECT id FROM Bills WHERE Patient_ID = ? OR Reg_No = ? ORDER BY id DESC LIMIT 1", (pid, reg))
+                bill_row = cursor.fetchone()
+                if bill_row:
+                    bill_id = bill_row[0]
+                    cursor.execute("UPDATE Bills SET Total_Amount = ?, Balance_Due = ?, Comments = ? WHERE id = ?",
+                                   (total_amt, total_amt, self.patient_data.get("comments", ""), bill_id))
+                    cursor.execute("DELETE FROM Bill_Treatments WHERE Bill_ID = ?", (bill_id,))
+                else:
+                    cursor.execute("INSERT INTO Bills (Patient_ID, Reg_No, Date, Total_Amount, Balance_Due, Comments) VALUES (?, ?, ?, ?, ?, ?)",
+                                   (pid, reg, b_date, total_amt, total_amt, self.patient_data.get("comments", "")))
+                    bill_id = cursor.lastrowid
+
+                for item in self.treatments_list:
+                    tooth, trt, amt, _, doc = item
+                    try:
+                        amt_val = float(amt)
+                    except (ValueError, TypeError):
+                        amt_val = 0.0
+                    cursor.execute("INSERT INTO Bill_Treatments (Bill_ID, Tooth_No, Treatment, Amount, Doctor, Type) VALUES (?, ?, ?, ?, ?, ?)",
+                                   (bill_id, tooth, trt, amt_val, doc, "Treatment"))
+
+                conn.commit()
+                conn.close()
+            except Exception as e:
+                print(f"Error saving bill to database: {e}")
+
             d = Doctors(self.app)
             d.patient_data = self.patient_data
             d.treatments_list = self.treatments_list
@@ -688,6 +758,33 @@ class Bill:
         p = Prescription(self.app)
         p.patient_data = self.patient_data
         p.prescription()
+
+    def load_patient_bill_treatments(self, patient_id):
+        treatments = []
+        try:
+            conn = get_db_connection(self.app)
+            cursor = conn.cursor()
+            pid_str = str(patient_id).strip()
+            reg_str = f"REG-{int(pid_str):04d}" if pid_str.isdigit() else pid_str
+            cursor.execute("""
+                SELECT bt.Tooth_No, bt.Treatment, bt.Amount, bt.Doctor
+                FROM Bill_Treatments bt
+                JOIN Bills b ON bt.Bill_ID = b.id
+                WHERE b.Patient_ID = ? OR b.Reg_No = ?
+                ORDER BY bt.id ASC
+            """, (pid_str, reg_str))
+            rows = cursor.fetchall()
+            conn.close()
+
+            for r in rows:
+                tooth = r[0] if r[0] else "-"
+                treatment = r[1] if r[1] else ""
+                amount = f"{float(r[2]):.2f}" if r[2] is not None else "0.00"
+                doc = r[3] if r[3] else ""
+                treatments.append((tooth, treatment, amount, doc))
+        except Exception as e:
+            print(f"Error loading bill treatments: {e}")
+        return treatments
 
     def close(self):
         from registration import Registration

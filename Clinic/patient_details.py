@@ -78,9 +78,9 @@ class Patient_Details:
         self.f_email = tk.Entry(form_lf, width=18)
         self.f_email.grid(row=6, column=1, columnspan=2, padx=4, pady=2, sticky="we")
 
-        tk.Label(form_lf, text="Notes:", font=("Arial", 8)).grid(row=7, column=0, padx=4, pady=2, sticky="e")
-        self.f_notes = tk.Text(form_lf, height=3, width=24)
-        self.f_notes.grid(row=7, column=1, columnspan=2, padx=4, pady=2, sticky="we")
+        # tk.Label(form_lf, text="Notes:", font=("Arial", 8)).grid(row=7, column=0, padx=4, pady=2, sticky="e")
+        # self.f_notes = tk.Text(form_lf, height=3, width=24)
+        # self.f_notes.grid(row=7, column=1, columnspan=2, padx=4, pady=2, sticky="we")
 
         # ── Action Buttons ────────────────────────────
         btn_frame = tk.Frame(left_frame)

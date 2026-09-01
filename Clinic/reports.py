@@ -461,6 +461,8 @@ class Reports:
             "current_page": 0,
             "total_receipts": 0.0,
             "total_payments": 0.0,
+            "total_cash": 0.0,
+            "total_qrcode": 0.0,
             "s_str": "",
             "e_str": ""
         }
@@ -538,45 +540,60 @@ class Reports:
             else:
                 y_pt = PAGE_H - 50
                 
-            # Table headers
-            headers = ["No", "Patient Name", "Address", "Receipts", "Payments"]
-            x_pt_positions = [30, 100, 200, 420, 500]
+            # Table headers (7 columns - Full Size Font Size 5)
+            headers = ["No", "Patient ID", "Patient Name", "Address", "Particulars/Narrations", "Receipts", "Payments"]
+            x_pt_positions = [15, 45, 110, 200, 300, 425, 500]
             
-            cv.create_line(ppx(30), ppy(y_pt - 5), ppx(PAGE_W - 30), ppy(y_pt - 5), fill="black", width=1)
-            y_pt -= 16
-            
+            cv.create_line(ppx(15), ppy(y_pt + 6), ppx(PAGE_W - 15), ppy(y_pt + 6), fill="black", width=1)
             for i, h in enumerate(headers):
                 cv.create_text(ppx(x_pt_positions[i]), ppy(y_pt), text=h,
-                               font=("Helvetica", spt(10), "bold"), fill="black", anchor="w")
+                               font=("Helvetica", spt(5), "bold"), fill="black", anchor="w")
             
-            cv.create_line(ppx(30), ppy(y_pt - 10), ppx(PAGE_W - 30), ppy(y_pt - 10), fill="black", width=1)
-            y_pt -= 10
+            y_pt -= 12
+            cv.create_line(ppx(15), ppy(y_pt + 3), ppx(PAGE_W - 15), ppy(y_pt + 3), fill="black", width=1)
+            y_pt -= 14
             
-            for t in page_txs:
-                t_id, r_date, chs_no, paid_to, t_type, ac_head, amt = t
+            for idx, t in enumerate(page_txs, start=1):
+                t_id, r_date, chs_no, paid_to, t_type, ac_head, amt = t[:7]
+                addr = t[7] if len(t) > 7 else ""
+                pid_str = t[8] if len(t) > 8 else str(chs_no if chs_no else t_id)
                 t_type_str = str(t_type) if t_type else ""
+                receipt_str = f"{amt:,.2f}" if "Receipt" in t_type_str or "CR" in t_type_str.upper() else ""
+                payment_str = f"{amt:,.2f}" if "Payment" in t_type_str or "DR" in t_type_str.upper() or not receipt_str else ""
                 
-                cv.create_text(ppx(x_pt_positions[0]), ppy(y_pt), text=str(t_id), font=("Helvetica", spt(10)), fill="black", anchor="w")
-                cv.create_text(ppx(x_pt_positions[1]), ppy(y_pt), text=str(r_date), font=("Helvetica", spt(10)), fill="black", anchor="w")
-                cv.create_text(ppx(x_pt_positions[2]), ppy(y_pt), text=str(chs_no)[:12], font=("Helvetica", spt(10)), fill="black", anchor="w")
-                cv.create_text(ppx(x_pt_positions[3]), ppy(y_pt), text=str(paid_to)[:25], font=("Helvetica", spt(10)), fill="black", anchor="w")
-                cv.create_text(ppx(x_pt_positions[4]), ppy(y_pt), text=t_type_str[:12], font=("Helvetica", spt(10)), fill="black", anchor="w")
-                cv.create_text(ppx(x_pt_positions[5]), ppy(y_pt), text=str(ac_head)[:12], font=("Helvetica", spt(10)), fill="black", anchor="w")
-                cv.create_text(ppx(x_pt_positions[6]), ppy(y_pt), text=f"{amt:,.2f}", font=("Helvetica", spt(10)), fill="black", anchor="w")
-                y_pt -= 18
+                pid_display = str(pid_str).strip() if pid_str else str(chs_no).strip()
+                p_name = str(paid_to).strip() if paid_to else "General"
+                p_addr = str(addr).strip() if addr else ""
+                p_narr = str(ac_head).strip() if ac_head else ""
+
+                cv.create_text(ppx(x_pt_positions[0]), ppy(y_pt), text=str(idx), font=("Helvetica", spt(5)), fill="black", anchor="w")
+                cv.create_text(ppx(x_pt_positions[1]), ppy(y_pt), text=pid_display[:15], font=("Helvetica", spt(5)), fill="black", anchor="w")
+                cv.create_text(ppx(x_pt_positions[2]), ppy(y_pt), text=p_name[:35], font=("Helvetica", spt(5)), fill="black", anchor="w")
+                cv.create_text(ppx(x_pt_positions[3]), ppy(y_pt), text=p_addr[:35], font=("Helvetica", spt(5)), fill="black", anchor="w")
+                cv.create_text(ppx(x_pt_positions[4]), ppy(y_pt), text=p_narr[:45], font=("Helvetica", spt(5)), fill="black", anchor="w")
+                cv.create_text(ppx(x_pt_positions[5]), ppy(y_pt), text=receipt_str, font=("Helvetica", spt(5)), fill="black", anchor="w")
+                cv.create_text(ppx(x_pt_positions[6]), ppy(y_pt), text=payment_str, font=("Helvetica", spt(5)), fill="black", anchor="w")
+                y_pt -= 14
                 
             if page_idx == len(pages) - 1:
-                y_pt_totals = y_pt - 70
-                cv.create_line(ppx(30), ppy(y_pt_totals + 5), ppx(PAGE_W - 30), ppy(y_pt_totals + 5), fill="black", width=1)
-                y_pt_totals -= 20
-                cv.create_text(ppx(360), ppy(y_pt_totals), text="Total Receipts:", font=("Helvetica", spt(10), "bold"), fill="black", anchor="w")
-                cv.create_text(ppx(510), ppy(y_pt_totals), text=f"{state['total_receipts']:,.2f}", font=("Helvetica", spt(10), "bold"), fill="black", anchor="w")
+                y_pt_totals = y_pt - 50
+                cv.create_line(ppx(15), ppy(y_pt_totals + 5), ppx(PAGE_W - 15), ppy(y_pt_totals + 5), fill="black", width=1)
                 y_pt_totals -= 15
-                cv.create_text(ppx(360), ppy(y_pt_totals), text="Total Payments:", font=("Helvetica", spt(10), "bold"), fill="black", anchor="w")
-                cv.create_text(ppx(510), ppy(y_pt_totals), text=f"{state['total_payments']:,.2f}", font=("Helvetica", spt(10), "bold"), fill="black", anchor="w")
-                y_pt_totals -= 15
-                cv.create_text(ppx(360), ppy(y_pt_totals), text="Net Balance:", font=("Helvetica", spt(10), "bold"), fill="black", anchor="w")
-                cv.create_text(ppx(510), ppy(y_pt_totals), text=f"{(state['total_receipts'] - state['total_payments']):,.2f}", font=("Helvetica", spt(10), "bold"), fill="black", anchor="w")
+                cv.create_text(ppx(340), ppy(y_pt_totals), text="Total Cash:", font=("Helvetica", spt(8), "bold"), fill="black", anchor="w")
+                cv.create_text(ppx(500), ppy(y_pt_totals), text=f"{state['total_cash']:,.2f}", font=("Helvetica", spt(8), "bold"), fill="black", anchor="w")
+                y_pt_totals -= 12
+                cv.create_text(ppx(340), ppy(y_pt_totals), text="Total QRcode:", font=("Helvetica", spt(8), "bold"), fill="black", anchor="w")
+                cv.create_text(ppx(500), ppy(y_pt_totals), text=f"{state['total_qrcode']:,.2f}", font=("Helvetica", spt(8), "bold"), fill="black", anchor="w")
+                y_pt_totals -= 12
+                cv.create_text(ppx(340), ppy(y_pt_totals), text="Total Receipts:", font=("Helvetica", spt(8), "bold"), fill="black", anchor="w")
+                cv.create_text(ppx(500), ppy(y_pt_totals), text=f"{state['total_receipts']:,.2f}", font=("Helvetica", spt(8), "bold"), fill="black", anchor="w")
+                y_pt_totals -= 12
+                cv.create_text(ppx(340), ppy(y_pt_totals), text="Total Payments:", font=("Helvetica", spt(8), "bold"), fill="black", anchor="w")
+                cv.create_text(ppx(500), ppy(y_pt_totals), text=f"{state['total_payments']:,.2f}", font=("Helvetica", spt(8), "bold"), fill="black", anchor="w")
+                y_pt_totals -= 12
+                cv.create_text(ppx(340), ppy(y_pt_totals), text="Net Balance:", font=("Helvetica", spt(8), "bold"), fill="black", anchor="w")
+                cv.create_text(ppx(500), ppy(y_pt_totals), text=f"{(state['total_receipts'] - state['total_payments']):,.2f}", font=("Helvetica", spt(8), "bold"), fill="black", anchor="w")
+
             
             # Paper Page Footer
             cv.create_text(pcx(), ppy(30), text=f"Page {page_idx + 1} of {len(pages)}", font=("Helvetica", spt(9)), fill="black")
@@ -594,11 +611,39 @@ class Reports:
                 conn = get_db_connection(self.app)
                 cursor = conn.cursor()
                 cursor.execute('''
-                    SELECT id, DATE, CHS_NO, PAID_TO, transaction_type, A_C_HEAD, AMOUNT
-                    FROM Receipts
-                    ORDER BY id ASC
+                    SELECT r.id, r.DATE, r.CHS_NO, r.PAID_TO, r.transaction_type, r.A_C_HEAD, r.AMOUNT, '' AS Address, r.CHS_NO AS Patient_ID
+                    FROM Receipts r
+                    ORDER BY r.id ASC
                 ''')
-                all_transactions = cursor.fetchall()
+                all_transactions = list(cursor.fetchall())
+
+                # Add Patient Payments from Bill_Accounts (Amount Paid / Credit entries in doctors_d.py)
+                cursor.execute('''
+                    SELECT ba.id, ba.Date, b.Reg_No, b.Patient_Name, 'Receipt', ba.Particulars, ba.Credit,
+                           COALESCE((SELECT Address1 FROM Appointments WHERE Patient_Name = b.Patient_Name ORDER BY id DESC LIMIT 1),
+                                    (SELECT address FROM registration WHERE pid = b.Patient_ID ORDER BY id DESC LIMIT 1), '') AS Address,
+                           COALESCE(b.Reg_No, PRINTF('REG-%04d', b.Patient_ID)) AS Patient_ID
+                    FROM Bill_Accounts ba
+                    JOIN Bills b ON ba.Bill_ID = b.id
+                    WHERE ba.Credit IS NOT NULL AND ba.Credit > 0
+                    ORDER BY ba.id ASC
+                ''')
+                all_transactions.extend(cursor.fetchall())
+
+                # Fallback: Patient Payments directly from Bills table
+                cursor.execute('''
+                    SELECT b.id, b.Date, b.Reg_No, b.Patient_Name, 'Receipt', 'Treatment Payment', (b.Total_Amount - b.Balance_Due),
+                           COALESCE((SELECT Address1 FROM Appointments WHERE Patient_Name = b.Patient_Name ORDER BY id DESC LIMIT 1),
+                                    (SELECT address FROM registration WHERE pid = b.Patient_ID ORDER BY id DESC LIMIT 1), '') AS Address,
+                           COALESCE(b.Reg_No, PRINTF('REG-%04d', b.Patient_ID)) AS Patient_ID
+                    FROM Bills b
+                    WHERE b.id NOT IN (SELECT Bill_ID FROM Bill_Accounts WHERE Credit > 0)
+                      AND b.Total_Amount IS NOT NULL
+                      AND (b.Total_Amount - b.Balance_Due) > 0
+                    ORDER BY b.id ASC
+                ''')
+                all_transactions.extend(cursor.fetchall())
+
                 conn.close()
             except sqlite3.Error as e:
                 messagebox.showerror("Database Error", f"Error loading cash book: {e}")
@@ -608,21 +653,30 @@ class Reports:
             transactions = []
             total_receipts = 0.0
             total_payments = 0.0
+            total_cash = 0.0
+            total_qrcode = 0.0
             
             for t in all_transactions:
-                t_id, r_date, chs_no, paid_to, t_type, ac_head, amt = t
+                t_id, r_date, chs_no, paid_to, t_type, ac_head, amt = t[:7]
+                addr = t[7] if len(t) > 7 else ""
+                pid_str = t[8] if len(t) > 8 else str(chs_no if chs_no else t_id)
                 d_obj = parse_date(r_date)
                 if s_date_obj and d_obj and d_obj < s_date_obj:
                     continue
                 if e_date_obj and d_obj and d_obj > e_date_obj:
                     continue
                 
-                transactions.append((t_id, r_date, chs_no, paid_to, t_type, ac_head, amt))
+                transactions.append((t_id, r_date, chs_no, paid_to, t_type, ac_head, amt, addr, pid_str))
                 
-                t_type_str = str(t_type) if t_type else ""
-                if "Receipt" in t_type_str:
+                t_type_str = str(t_type).upper() if t_type else ""
+                ac_head_str = str(ac_head).upper() if ac_head else ""
+                if "RECEIPT" in t_type_str or "CR" in t_type_str:
                     total_receipts += amt
-                elif "Payment" in t_type_str:
+                    if "QR" in t_type_str or "BANK" in t_type_str or "UPI" in t_type_str or "ONLINE" in t_type_str or "CARD" in t_type_str or "QR" in ac_head_str or "BANK" in ac_head_str or "UPI" in ac_head_str:
+                        total_qrcode += amt
+                    else:
+                        total_cash += amt
+                elif "PAYMENT" in t_type_str or "DR" in t_type_str:
                     total_payments += amt
 
             # Paginate transactions exactly
@@ -634,7 +688,7 @@ class Reports:
                 is_last = (i == len(transactions) - 1)
                 required_space = 18
                 if is_last:
-                    required_space += 54
+                    required_space += 84
                 
                 if y - required_space < 50:
                     pages.append(current_page_txs)
@@ -653,6 +707,8 @@ class Reports:
             state["current_page"] = 0
             state["total_receipts"] = total_receipts
             state["total_payments"] = total_payments
+            state["total_cash"] = total_cash
+            state["total_qrcode"] = total_qrcode
             state["s_str"] = s_str
             state["e_str"] = e_str
 
@@ -695,30 +751,67 @@ class Reports:
             conn = get_db_connection(self.app)
             cursor = conn.cursor()
             cursor.execute('''
-                SELECT id, DATE, CHS_NO, PAID_TO, transaction_type, A_C_HEAD, AMOUNT
-                FROM Receipts
-                ORDER BY id ASC
+                SELECT r.id, r.DATE, r.CHS_NO, r.PAID_TO, r.transaction_type, r.A_C_HEAD, r.AMOUNT, '' AS Address, r.CHS_NO AS Patient_ID
+                FROM Receipts r
+                ORDER BY r.id ASC
             ''')
-            all_transactions = cursor.fetchall()
+            all_transactions = list(cursor.fetchall())
+
+            # Add Patient Payments from Bill_Accounts (Amount Paid / Credit entries in doctors_d.py)
+            cursor.execute('''
+                SELECT ba.id, ba.Date, b.Reg_No, b.Patient_Name, 'Receipt', ba.Particulars, ba.Credit,
+                       COALESCE((SELECT Address1 FROM Appointments WHERE Patient_Name = b.Patient_Name ORDER BY id DESC LIMIT 1),
+                                (SELECT address FROM registration WHERE pid = b.Patient_ID ORDER BY id DESC LIMIT 1), '') AS Address,
+                       COALESCE(b.Reg_No, PRINTF('REG-%04d', b.Patient_ID)) AS Patient_ID
+                FROM Bill_Accounts ba
+                JOIN Bills b ON ba.Bill_ID = b.id
+                WHERE ba.Credit IS NOT NULL AND ba.Credit > 0
+                ORDER BY ba.id ASC
+            ''')
+            all_transactions.extend(cursor.fetchall())
+
+            # Fallback: Patient Payments directly from Bills table
+            cursor.execute('''
+                SELECT b.id, b.Date, b.Reg_No, b.Patient_Name, 'Receipt', 'Treatment Payment', (b.Total_Amount - b.Balance_Due),
+                       COALESCE((SELECT Address1 FROM Appointments WHERE Patient_Name = b.Patient_Name ORDER BY id DESC LIMIT 1),
+                                (SELECT address FROM registration WHERE pid = b.Patient_ID ORDER BY id DESC LIMIT 1), '') AS Address,
+                       COALESCE(b.Reg_No, PRINTF('REG-%04d', b.Patient_ID)) AS Patient_ID
+                FROM Bills b
+                WHERE b.id NOT IN (SELECT Bill_ID FROM Bill_Accounts WHERE Credit > 0)
+                  AND b.Total_Amount IS NOT NULL
+                  AND (b.Total_Amount - b.Balance_Due) > 0
+                ORDER BY b.id ASC
+            ''')
+            all_transactions.extend(cursor.fetchall())
+
             conn.close()
 
             # Filter by date range
             transactions = []
             total_receipts = 0.0
             total_payments = 0.0
+            total_cash = 0.0
+            total_qrcode = 0.0
             for t in all_transactions:
-                t_id, r_date, chs_no, paid_to, t_type, ac_head, amt = t
+                t_id, r_date, chs_no, paid_to, t_type, ac_head, amt = t[:7]
+                addr = t[7] if len(t) > 7 else ""
+                pid_str = t[8] if len(t) > 8 else str(chs_no if chs_no else t_id)
                 d_obj = parse_date(r_date)
                 if s_date_obj and d_obj and d_obj < s_date_obj:
                     continue
                 if e_date_obj and d_obj and d_obj > e_date_obj:
                     continue
-                transactions.append((t_id, r_date, chs_no, paid_to, t_type, ac_head, amt))
+                transactions.append((t_id, r_date, chs_no, paid_to, t_type, ac_head, amt, addr, pid_str))
                 
-                t_type_str = str(t_type) if t_type else ""
-                if "Receipt" in t_type_str:
+                t_type_str = str(t_type).upper() if t_type else ""
+                ac_head_str = str(ac_head).upper() if ac_head else ""
+                if "RECEIPT" in t_type_str or "CR" in t_type_str:
                     total_receipts += amt
-                elif "Payment" in t_type_str:
+                    if "QR" in t_type_str or "BANK" in t_type_str or "UPI" in t_type_str or "ONLINE" in t_type_str or "CARD" in t_type_str or "QR" in ac_head_str or "BANK" in ac_head_str or "UPI" in ac_head_str:
+                        total_qrcode += amt
+                    else:
+                        total_cash += amt
+                elif "PAYMENT" in t_type_str or "DR" in t_type_str:
                     total_payments += amt
 
             # Paginate exactly like preview
@@ -729,7 +822,7 @@ class Reports:
                 is_last = (i == len(transactions) - 1)
                 required_space = 18
                 if is_last:
-                    required_space += 54
+                    required_space += 84
                 
                 if y - required_space < 50:
                     pages.append(current_page_txs)
@@ -766,47 +859,60 @@ class Reports:
                 else:
                     y = height - 50
                 
-                # Table headers
-                c.setFont("Helvetica-Bold", 10)
-                headers = ["No", "Patient Name", "Address", "Receipts", "Payments"]
-                x_positions = [30, 100, 200, 420, 500]
+                # Table headers (7 columns - Full Size Font Size 5)
+                c.setFont("Helvetica-Bold", 5)
+                headers = ["No", "Patient ID", "Patient Name", "Address", "Particulars/Narrations", "Receipts", "Payments"]
+                x_positions = [15, 45, 110, 200, 300, 425, 500]
 
-                c.line(30, y - 5, width - 30, y - 5)
-                y -= 16
-
+                c.line(15, y + 6, width - 15, y + 6)
                 for i, h in enumerate(headers):
                     c.drawString(x_positions[i], y, h)
-                
-                c.line(30, y - 5, width - 30, y - 5)
-                y -= 10
-                
-                c.setFont("Helvetica", 10)
-                for t in page_txs:
-                    t_id, r_date, chs_no, paid_to, t_type, ac_head, amt = t
+                y -= 12
+                c.line(15, y + 3, width - 15, y + 3)
+                y -= 14
+
+                c.setFont("Helvetica", 5)
+                for idx, t in enumerate(page_txs, start=1):
+                    t_id, r_date, chs_no, paid_to, t_type, ac_head, amt = t[:7]
+                    addr = t[7] if len(t) > 7 else ""
+                    pid_str = t[8] if len(t) > 8 else str(chs_no if chs_no else t_id)
                     t_type_str = str(t_type) if t_type else ""
+                    receipt_str = f"{amt:,.2f}" if "Receipt" in t_type_str or "CR" in t_type_str.upper() else ""
+                    payment_str = f"{amt:,.2f}" if "Payment" in t_type_str or "DR" in t_type_str.upper() or not receipt_str else ""
                     
-                    c.drawString(x_positions[0], y, str(t_id))
-                    c.drawString(x_positions[1], y, str(r_date))
-                    c.drawString(x_positions[2], y, str(chs_no)[:12])
-                    c.drawString(x_positions[3], y, str(paid_to)[:25])
-                    c.drawString(x_positions[4], y, t_type_str[:12])
-                    c.drawString(x_positions[5], y, str(ac_head)[:12])
-                    c.drawString(x_positions[6], y, f"{amt:,.2f}")
-                    y -= 18
+                    pid_display = str(pid_str).strip() if pid_str else str(chs_no).strip()
+                    p_name = str(paid_to).strip() if paid_to else "General"
+                    p_addr = str(addr).strip() if addr else ""
+                    p_narr = str(ac_head).strip() if ac_head else ""
+
+                    c.drawString(x_positions[0], y, str(idx))
+                    c.drawString(x_positions[1], y, pid_display[:15])
+                    c.drawString(x_positions[2], y, p_name[:35])
+                    c.drawString(x_positions[3], y, p_addr[:35])
+                    c.drawString(x_positions[4], y, p_narr[:45])
+                    c.drawString(x_positions[5], y, receipt_str)
+                    c.drawString(x_positions[6], y, payment_str)
+                    y -= 14
 
                 if page_idx == len(pages) - 1:
-                    y_pt_totals = y - 70
-                    c.line(30, y_pt_totals + 5, width - 30, y_pt_totals + 5)
-                    y_pt_totals -= 20
-                    c.setFont("Helvetica-Bold", 10)
-                    c.drawString(360, y_pt_totals, "Total Receipts:")
-                    c.drawString(510, y_pt_totals, f"{total_receipts:,.2f}")
+                    y_pt_totals = y - 50
+                    c.line(15, y_pt_totals + 5, width - 15, y_pt_totals + 5)
                     y_pt_totals -= 15
-                    c.drawString(360, y_pt_totals, "Total Payments:")
-                    c.drawString(510, y_pt_totals, f"{total_payments:,.2f}")
-                    y_pt_totals -= 15
-                    c.drawString(360, y_pt_totals, "Net Balance:")
-                    c.drawString(510, y_pt_totals, f"{(total_receipts - total_payments):,.2f}")
+                    c.setFont("Helvetica-Bold", 8)
+                    c.drawString(340, y_pt_totals, "Total Cash:")
+                    c.drawString(500, y_pt_totals, f"{total_cash:,.2f}")
+                    y_pt_totals -= 12
+                    c.drawString(340, y_pt_totals, "Total QRcode:")
+                    c.drawString(500, y_pt_totals, f"{total_qrcode:,.2f}")
+                    y_pt_totals -= 12
+                    c.drawString(340, y_pt_totals, "Total Receipts:")
+                    c.drawString(500, y_pt_totals, f"{total_receipts:,.2f}")
+                    y_pt_totals -= 12
+                    c.drawString(340, y_pt_totals, "Total Payments:")
+                    c.drawString(500, y_pt_totals, f"{total_payments:,.2f}")
+                    y_pt_totals -= 12
+                    c.drawString(340, y_pt_totals, "Net Balance:")
+                    c.drawString(500, y_pt_totals, f"{(total_receipts - total_payments):,.2f}")
                 
                 # Page number footer
                 c.setFont("Helvetica", 9)
@@ -841,15 +947,11 @@ class Reports:
             if not s_str or not e_str:
                 messagebox.showerror("Error", "Please select start and end dates.")
                 return
-            from tkinter import filedialog
-            filepath = filedialog.asksaveasfilename(
-                defaultextension=".pdf", initialfile=f"Daily_Transaction_{s_str}_to_{e_str}.pdf",
-                filetypes=[("PDF files", "*.pdf")],
-                title="Save Daily Transaction Report As")
-            if not filepath: return
+            
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            filepath = os.path.join(script_dir, f"Daily_Transaction_{s_str}_to_{e_str}.pdf")
             try:
                 generate_pdf(filepath, s_str, e_str)
-                messagebox.showinfo("Done", f"Daily Transaction Report saved:\n{filepath}")
                 _open_pdf(filepath)
             except Exception as exc:
                 messagebox.showerror("Error", f"PDF generation failed:\n{exc}")

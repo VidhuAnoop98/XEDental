@@ -45,8 +45,15 @@ class Suppliers_Register:
         # Add supplier entry + buttons
         sup_entry_frame = tk.Frame(left_lf)
         sup_entry_frame.pack(fill="x", padx=6, pady=(6, 2))
-        self.sup_name_entry = tk.Entry(sup_entry_frame, font=("Arial", 10), width=20)
-        self.sup_name_entry.pack(side="left", padx=(0, 4))
+
+        tk.Label(sup_entry_frame, text="Name:", font=("Arial", 9, "bold")).pack(side="left", padx=(0, 2))
+        self.sup_name_entry = tk.Entry(sup_entry_frame, font=("Arial", 10), width=18)
+        self.sup_name_entry.pack(side="left", padx=(0, 6))
+
+        tk.Label(sup_entry_frame, text="Address:", font=("Arial", 9, "bold")).pack(side="left", padx=(0, 2))
+        self.sup_address_entry = tk.Entry(sup_entry_frame, font=("Arial", 10), width=22)
+        self.sup_address_entry.pack(side="left", padx=(0, 6))
+
         tk.Button(sup_entry_frame, text="ADD", font=("Arial", 9, "bold"), width=6,
                   bg="#27AE60", fg="white",
                   command=self._add_supplier).pack(side="left", padx=2)
@@ -58,19 +65,28 @@ class Suppliers_Register:
         sup_tree_frame.pack(fill="both", expand=True, padx=6, pady=(2, 6))
 
         self.supplier_tree = ttk.Treeview(
-            sup_tree_frame, columns=("ID", "Supplier Name"),
-            show="headings", height=14
+            sup_tree_frame, columns=("ID", "Supplier Name","Address"),
+            show="headings", height=8
         )
         self.supplier_tree.heading("ID", text="ID")
         self.supplier_tree.heading("Supplier Name", text="Supplier Name")
+        self.supplier_tree.heading("Address", text="Address")
         self.supplier_tree.column("ID", width=40, anchor="center")
-        self.supplier_tree.column("Supplier Name", width=180, anchor="w")
+        self.supplier_tree.column("Supplier Name", width=150, anchor="w")
+        self.supplier_tree.column("Address", width=200, anchor="w")
 
         sup_vsb = ttk.Scrollbar(sup_tree_frame, orient="vertical",
                                 command=self.supplier_tree.yview)
         self.supplier_tree.configure(yscrollcommand=sup_vsb.set)
         self.supplier_tree.pack(side="left", fill="both", expand=True)
         sup_vsb.pack(side="left", fill="y")
+
+        if hasattr(self.app, 'setup_treeview_style'):
+            self.app.setup_treeview_style(self.supplier_tree)
+        else:
+            self.supplier_tree.config(cursor="hand2")
+            self.supplier_tree.tag_configure("evenrow", background="#E3F2FD", foreground="black")
+            self.supplier_tree.tag_configure("oddrow", background="#F5F5F5", foreground="black")
 
         self.supplier_tree.bind("<<TreeviewSelect>>", self._on_supplier_select)
 
@@ -97,6 +113,17 @@ class Suppliers_Register:
             entry = tk.Entry(form, font=("Arial", 9), width=14)
             entry.grid(row=row, column=col + 1, padx=(0, 8), pady=4, sticky="w")
             setattr(self, attr, entry)
+
+        # Ctrl+; → insert today's date into date fields
+        def _bind_ctrl_semicolon(entry_widget):
+            def _insert_today(event=None):
+                from datetime import datetime
+                entry_widget.delete(0, "end")
+                entry_widget.insert(0, datetime.now().strftime("%d-%m-%Y"))
+                return "break"
+            entry_widget.bind("<Control-semicolon>", _insert_today)
+        _bind_ctrl_semicolon(self.sr_start_date)
+        _bind_ctrl_semicolon(self.sr_end_date)
 
         # Ledger entry buttons
         btn_row = tk.Frame(mid_lf)
@@ -155,6 +182,13 @@ class Suppliers_Register:
         self.ledger_tree.pack(side="left", fill="both", expand=True)
         ledger_vsb.pack(side="left", fill="y")
 
+        if hasattr(self.app, 'setup_treeview_style'):
+            self.app.setup_treeview_style(self.ledger_tree)
+        else:
+            self.ledger_tree.config(cursor="hand2")
+            self.ledger_tree.tag_configure("evenrow", background="#E3F2FD", foreground="black")
+            self.ledger_tree.tag_configure("oddrow", background="#F5F5F5", foreground="black")
+
         # Summary labels
         sum_frame = tk.Frame(ledger_lf)
         sum_frame.pack(fill="x", padx=6, pady=(0, 4))
@@ -192,6 +226,13 @@ class Suppliers_Register:
         self.product_tree.pack(side="left", fill="both", expand=True)
         prod_vsb.pack(side="left", fill="y")
 
+        if hasattr(self.app, 'setup_treeview_style'):
+            self.app.setup_treeview_style(self.product_tree)
+        else:
+            self.product_tree.config(cursor="hand2")
+            self.product_tree.tag_configure("evenrow", background="#E3F2FD", foreground="black")
+            self.product_tree.tag_configure("oddrow", background="#F5F5F5", foreground="black")
+
         # Track selected supplier
         self._selected_supplier_id = None
 
@@ -205,26 +246,39 @@ class Suppliers_Register:
         try:
             conn = self.get_db_connection()
             c = conn.cursor()
-            c.execute("SELECT id, Supplier_Name FROM Suppliers ORDER BY Supplier_Name")
-            for row in c.fetchall():
+            # Ensure Address column exists
+            try:
+                c.execute("ALTER TABLE Suppliers ADD COLUMN Address TEXT DEFAULT ''")
+                conn.commit()
+            except Exception:
+                pass
+            c.execute("SELECT id, Supplier_Name, Address FROM Suppliers ORDER BY id ASC")
+            for idx, row in enumerate(c.fetchall()):
+                tag = "evenrow" if idx % 2 == 0 else "oddrow"
                 self.supplier_tree.insert("", "end", iid=str(row[0]),
-                                         values=(row[0], row[1]))
+                                         values=(row[0], row[1], row[2] or ""),
+                                         tags=(tag,))
             conn.close()
         except Exception as e:
             messagebox.showerror("DB Error", str(e))
 
     def _add_supplier(self):
         name = self.sup_name_entry.get().strip()
+        address = self.sup_address_entry.get().strip()
         if not name:
             messagebox.showwarning("Input", "Enter a supplier name.")
             return
         try:
             conn = self.get_db_connection()
             c = conn.cursor()
-            c.execute("INSERT OR IGNORE INTO Suppliers (Supplier_Name) VALUES (?)", (name,))
+            c.execute(
+                "INSERT OR IGNORE INTO Suppliers (Supplier_Name, Address) VALUES (?, ?)",
+                (name, address)
+            )
             conn.commit()
             conn.close()
             self.sup_name_entry.delete(0, "end")
+            self.sup_address_entry.delete(0, "end")
             self._load_suppliers()
         except Exception as e:
             messagebox.showerror("DB Error", str(e))
@@ -261,6 +315,8 @@ class Suppliers_Register:
         vals = self.supplier_tree.item(sel)["values"]
         self.sup_name_entry.delete(0, "end")
         self.sup_name_entry.insert(0, vals[1])
+        self.sup_address_entry.delete(0, "end")
+        self.sup_address_entry.insert(0, str(vals[2]) if len(vals) > 2 else "")
         self._load_ledger()
         self._load_products()
 
@@ -278,15 +334,17 @@ class Suppliers_Register:
                 (self._selected_supplier_id,)
             )
             total_r, total_p = 0.0, 0.0
-            for row in c.fetchall():
+            for idx, row in enumerate(c.fetchall()):
                 rid, dt, inv, part, rcpt, pay = row
                 rcpt = rcpt or 0
                 pay = pay or 0
                 total_r += rcpt
                 total_p += pay
+                tag = "evenrow" if idx % 2 == 0 else "oddrow"
                 self.ledger_tree.insert("", "end", iid=str(rid),
                     values=(dt or "", inv or "", part or "",
-                            f"{rcpt:.2f}", f"{pay:.2f}"))
+                            f"{rcpt:.2f}", f"{pay:.2f}"),
+                    tags=(tag,))
             conn.close()
             self.lbl_total_receipt.config(text=f"Total Receipt: {total_r:.2f}")
             self.lbl_total_payment.config(text=f"Total Payment: {total_p:.2f}")
@@ -362,6 +420,8 @@ class Suppliers_Register:
             return
 
         supplier_name = self.sup_name_entry.get().strip()
+        supplier_address = self.sup_address_entry.get().strip()
+        sup_info = f"{supplier_name} ---- {supplier_address}" if supplier_address else supplier_name
 
         try:
             from reportlab.lib.pagesizes import A4
@@ -394,7 +454,7 @@ class Suppliers_Register:
         c.drawCentredString(width/2.0, height - 20*mm, "Supplier Ledger")
 
         c.setFont("Helvetica", 12)
-        c.drawString(20*mm, height - 35*mm, f"Supplier: {supplier_name}")
+        c.drawString(20*mm, height - 35*mm, f"Supplier: {sup_info}")
         c.drawString(width - 60*mm, height - 35*mm, f"Date: {datetime.now().strftime('%d-%m-%Y')}")
 
         # Table Header
@@ -480,10 +540,12 @@ class Suppliers_Register:
                 "FROM Supplier_Products WHERE Supplier_ID=? ORDER BY Product",
                 (self._selected_supplier_id,)
             )
-            for row in c.fetchall():
+            for idx, row in enumerate(c.fetchall()):
+                tag = "evenrow" if idx % 2 == 0 else "oddrow"
                 self.product_tree.insert("", "end",
                     values=(row[0] or "", f"{row[1] or 0:.2f}",
-                            row[2] or 0, f"{row[3] or 0:.2f}"))
+                            row[2] or 0, f"{row[3] or 0:.2f}"),
+                    tags=(tag,))
             conn.close()
         except Exception as e:
             messagebox.showerror("DB Error", str(e))

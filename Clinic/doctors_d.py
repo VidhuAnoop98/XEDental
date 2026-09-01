@@ -265,6 +265,11 @@ class Doctors:
         self.amount_paid_entry = tk.Entry(treat_ctrl_frame, width=9)
         self.amount_paid_entry.pack(side="left", padx=2, pady=4)
 
+        tk.Label(treat_ctrl_frame, text="Mode:", font=("Arial", 9, "bold"), bg="#EAE6DF").pack(side="left", padx=(6, 2), pady=4)
+        self.pay_mode_combo = ttk.Combobox(treat_ctrl_frame, values=["Cash", "QR Code"], state="readonly", width=9, font=("Arial", 9))
+        self.pay_mode_combo.set("Cash")
+        self.pay_mode_combo.pack(side="left", padx=2, pady=4)
+
         self.total_label = tk.Label(treat_ctrl_frame, text="Total: ₹0.00", font=("Arial", 11, "bold"), fg="green", bg="#EAE6DF")
         self.total_label.pack(side="right", padx=8, pady=4)
 
@@ -276,6 +281,7 @@ class Doctors:
                 except (ValueError, IndexError):
                     pass
             self.total_label.config(text=f"Total: ₹{total:.2f}")
+            self.sync_doc_tree_to_acc_tree()
 
         self.update_total = update_total
 
@@ -283,13 +289,11 @@ class Doctors:
             selected = doc_tree.selection()
             paid_str = self.amount_paid_entry.get().strip()
             selected_doc = self.doctors_entry.get().strip()
+            pay_mode = self.pay_mode_combo.get().strip() if hasattr(self, 'pay_mode_combo') and self.pay_mode_combo else "Cash"
 
             if not paid_str:
                 messagebox.showwarning("Input Required", "Please enter Amount Paid.")
                 return
-
-            particulars_val = "Treatment Payment"
-            debit_val = "0.00"
 
             if selected:
                 item_id = selected[0]
@@ -297,34 +301,14 @@ class Doctors:
                 vals[3] = paid_str
                 if len(vals) > 4 and not vals[4]:
                     vals[4] = selected_doc
+                if len(vals) > 5:
+                    vals[5] = pay_mode
+                else:
+                    vals.append(pay_mode)
                 doc_tree.item(item_id, values=vals)
-                particulars_val = vals[1] if len(vals) > 1 and vals[1] else "Treatment Payment"
-                debit_val = vals[2] if len(vals) > 2 and vals[2] else "0.00"
 
-            # Connect Credit into Accounts table (acc_tree)
-            date_str = datetime.now().strftime("%d-%m-%Y")
-            credit_val = paid_str
-
-            balance = 0.0
-            for child in self.acc_tree.get_children():
-                values = self.acc_tree.item(child)["values"]
-                try:
-                    balance += float(values[1]) if values[1] else 0.0
-                except (ValueError, IndexError):
-                    pass
-                try:
-                    balance -= float(values[2]) if values[2] else 0.0
-                except (ValueError, IndexError):
-                    pass
-            try:
-                balance -= float(credit_val) if credit_val else 0.0
-            except ValueError:
-                pass
-
-            self.acc_tree.insert("", "end", values=(date_str, "0.00", credit_val, particulars_val, f"{balance:.2f}"))
             self.amount_paid_entry.delete(0, 'end')
             update_total()
-            calculate_balance()
 
         def delete_row():
             selected = doc_tree.selection()
@@ -410,22 +394,17 @@ class Doctors:
             self.acc_tree.heading(col, text=col)
             self.acc_tree.column(col, width=80)
 
+        # Configure row colors: Red for Debit/Negative, Green for Credit/Positive
+        self.acc_tree.tag_configure("debit_row", foreground="#D32F2F")
+        self.acc_tree.tag_configure("credit_row", foreground="#2E7D32")
+
         # Balance label
-        self.balance_label = tk.Label(self.accounts, text="Balance: ₹0.00", font=("Arial", 11, "bold"), fg="blue")
+        self.balance_label = tk.Label(self.accounts, text="Balance: ₹0.00", font=("Arial", 11, "bold"), fg="#D32F2F")
 
         def calculate_balance():
-            balance = 0.0
-            for child in self.acc_tree.get_children():
-                values = self.acc_tree.item(child)["values"]
-                try:
-                    balance += float(values[1]) if values[1] else 0.0  # Debit
-                except (ValueError, IndexError):
-                    pass
-                try:
-                    balance -= float(values[2]) if values[2] else 0.0  # Credit
-                except (ValueError, IndexError):
-                    pass
-            self.balance_label.config(text=f"Balance: ₹{balance:.2f}")
+            self.sync_doc_tree_to_acc_tree()
+
+        calculate_balance()
 
         def add_acc_item():
             date = self.acc_date_entry.get()
@@ -524,6 +503,58 @@ class Doctors:
                                       bg="#f44336", fg="white", command=self.close)
         btn_close_details.pack(side="right", padx=10)
 
+    def sync_doc_tree_to_acc_tree(self):
+        if not hasattr(self, 'acc_tree') or not self.acc_tree:
+            return
+        for child in self.acc_tree.get_children():
+            self.acc_tree.delete(child)
+
+        date_str = datetime.now().strftime("%d-%m-%Y")
+        running_balance = 0.0
+
+        if hasattr(self, 'doc_tree') and self.doc_tree:
+            for child in self.doc_tree.get_children():
+                vals = self.doc_tree.item(child)["values"]
+                if not vals:
+                    continue
+                particulars = str(vals[1]) if len(vals) > 1 and vals[1] else "Treatment"
+                try:
+                    debit = float(vals[2]) if len(vals) > 2 and vals[2] else 0.0
+                except (ValueError, TypeError):
+                    debit = 0.0
+                try:
+                    credit = float(vals[3]) if len(vals) > 3 and vals[3] else 0.0
+                except (ValueError, TypeError):
+                    credit = 0.0
+
+                # 1. Treatment Row (Debit charge - Red)
+                if debit > 0 or credit == 0:
+                    running_balance += debit
+                    self.acc_tree.insert("", "end", values=(
+                        date_str,
+                        f"{debit:.2f}",
+                        "0.00",
+                        particulars,
+                        f"{running_balance:.2f}"
+                    ), tags=("debit_row",))
+
+                # 2. Next Add Payment Row (Credit payment - Green) if payment exists
+                if credit > 0:
+                    running_balance -= credit
+                    mode_str = str(vals[5]) if len(vals) > 5 and vals[5] else (self.pay_mode_combo.get().strip() if hasattr(self, 'pay_mode_combo') and self.pay_mode_combo else "Cash")
+                    payment_desc = mode_str if mode_str in ["Cash", "QR Code"] else f"{mode_str} Payment"
+                    self.acc_tree.insert("", "end", values=(
+                        date_str,
+                        "0.00",
+                        f"{credit:.2f}",
+                        payment_desc,
+                        f"{running_balance:.2f}"
+                    ), tags=("credit_row",))
+
+        if hasattr(self, 'balance_label') and self.balance_label:
+            lbl_color = "#D32F2F" if running_balance > 0 else "#2E7D32"
+            self.balance_label.config(text=f"Balance: ₹{running_balance:.2f}", fg=lbl_color)
+
     def load_patient_treatments(self, patient_id):
         if not hasattr(self, 'doc_tree') or not self.doc_tree:
             return
@@ -588,15 +619,18 @@ class Doctors:
                 balance += d_num - c_num
                 if str(date_val).strip() == today_str:
                     has_today = True
-                self.acc_tree.insert("", "end", values=(date_val, f"{d_num:.2f}", f"{c_num:.2f}", part_val, f"{balance:.2f}"))
+                row_tag = "debit_row" if d_num > 0 or c_num == 0 else "credit_row"
+                self.acc_tree.insert("", "end", values=(date_val, f"{d_num:.2f}", f"{c_num:.2f}", part_val, f"{balance:.2f}"), tags=(row_tag,))
 
             # If past transactions exist and today's save date ("now") is not present,
             # automatically append current save date row carrying forward past balance to now.
             if rows and not has_today:
-                self.acc_tree.insert("", "end", values=(today_str, "0.00", "0.00", "Balance B/F", f"{balance:.2f}"))
+                row_tag = "debit_row" if balance > 0 else "credit_row"
+                self.acc_tree.insert("", "end", values=(today_str, "0.00", "0.00", "Balance B/F", f"{balance:.2f}"), tags=(row_tag,))
 
             if hasattr(self, 'balance_label'):
-                self.balance_label.config(text=f"Balance: ₹{balance:.2f}")
+                lbl_color = "#D32F2F" if balance > 0 else "#2E7D32"
+                self.balance_label.config(text=f"Balance: ₹{balance:.2f}", fg=lbl_color)
         except Exception as e:
             print(f"Error loading accounts: {e}")
 
@@ -610,7 +644,7 @@ class Doctors:
         b.bill()
 
     def close(self):
-        self.app.registration()
+        self.bill()
 
     def save_bill_db(self, doc_tree, acc_tree):
         p_name = self.bill_patientname.get().strip()

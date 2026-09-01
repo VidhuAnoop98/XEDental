@@ -506,15 +506,11 @@ class Letter:
                 messagebox.showerror("Missing Library",
                     "ReportLab is required.\nRun:  pip install reportlab")
                 return
-            filepath = filedialog.asksaveasfilename(
-                defaultextension=".pdf", initialfile="Anupam_Dental_Letterhead.pdf",
-                initialdir=SCRIPT_DIR, filetypes=[("PDF files", "*.pdf")],
-                title="Save Letterhead PDF As")
-            if not filepath:
-                return
+            filepath = os.path.join(SCRIPT_DIR, "Anupam_Dental_Letterhead.pdf")
             try:
                 generate_pdf(filepath)
-                messagebox.showinfo("Done", f"Letterhead PDF saved:\n{filepath}")
+                docx_path = convert_pdf_to_docx(filepath)
+                messagebox.showinfo("Done", f"Letterhead saved successfully:\n📄 PDF: {filepath}\n📝 Word: {docx_path}")
                 _open_pdf(filepath)
             except Exception as exc:
                 messagebox.showerror("Error", f"PDF generation failed:\n{exc}")
@@ -672,22 +668,13 @@ class Letter:
                 messagebox.showerror("Missing Library",
                     "python-docx is required.\nRun:  pip install python-docx")
                 return
-            filepath = filedialog.asksaveasfilename(
-                defaultextension=".docx",
-                initialfile="Anupam_Dental_Letterhead.docx",
-                initialdir=SCRIPT_DIR,
-                filetypes=[("Word Document", "*.docx")],
-                title="Save Letterhead Word Doc As")
-            if not filepath:
-                return
+            filepath = os.path.join(SCRIPT_DIR, "Anupam_Dental_Letterhead.docx")
             try:
                 tmp_pdf = os.path.join(SCRIPT_DIR, "_letterhead_temp.pdf")
                 generate_pdf(tmp_pdf)
-                convert_pdf_to_docx(tmp_pdf, filepath)
-                messagebox.showinfo("Done", f"Word document saved:\n{filepath}")
-                open_file(filepath)
-            except PermissionError:
-                messagebox.showerror("Error", f"Word generation failed: Permission Denied.\n\nPlease close the file '{os.path.basename(filepath)}' in Microsoft Word (or any other program) and try again.")
+                docx_path = convert_pdf_to_docx(tmp_pdf, filepath)
+                messagebox.showinfo("Done", f"Word document saved:\n{docx_path}")
+                open_file(docx_path)
             except Exception as exc:
                 messagebox.showerror("Error", f"Word generation failed:\n{exc}")
 
@@ -1098,12 +1085,7 @@ class Letter:
             open_file(path)
 
         def _generate_pdf():
-            filepath = filedialog.asksaveasfilename(
-                defaultextension=".pdf", initialfile="Anupam_Dental_Clinic_Plain_Prescription.pdf",
-                initialdir=SCRIPT_DIR, filetypes=[("PDF files", "*.pdf")],
-                title="Save Prescription PDF As")
-            if not filepath:
-                return
+            filepath = os.path.join(SCRIPT_DIR, "Anupam_Dental_Clinic_Plain_Prescription.pdf")
             try:
                 generate_pdf(filepath)
                 docx_path = convert_pdf_to_docx(filepath)
@@ -1113,12 +1095,7 @@ class Letter:
                 messagebox.showerror("Error", f"PDF generation failed:\n{exc}")
 
         def _generate_word():
-            filepath = filedialog.asksaveasfilename(
-                defaultextension=".docx", initialfile="Anupam_Dental_Clinic_Plain_Prescription.docx",
-                initialdir=SCRIPT_DIR, filetypes=[("Word Document", "*.docx")],
-                title="Save Prescription Word Doc As")
-            if not filepath:
-                return
+            filepath = os.path.join(SCRIPT_DIR, "Anupam_Dental_Clinic_Plain_Prescription.docx")
             try:
                 tmp_pdf = os.path.join(SCRIPT_DIR, "_plain_prescription_temp.pdf")
                 generate_pdf(tmp_pdf)
@@ -1140,11 +1117,124 @@ class Letter:
         tk.Button(btn_bar, text="📄  Generate PDF", font=("Arial", 11), width=16,
                   bg="#1565C0", fg="white", command=_generate_pdf).grid(row=0, column=0, padx=6)
         tk.Button(btn_bar, text="📝  Word", font=("Arial", 11), width=12,
-                  bg="#6A1B9A", fg="white", command=_generate_word).grid(row=0, column=1, padx=6)
+                  bg="#6A1B9A", fg="white", command=_generate_word).grid(row=0, column=2, padx=6)
         tk.Button(btn_bar, text="🖨  Open / Print", font=("Arial", 11), width=16,
-                  bg="#2E7D32", fg="white", command=_print_now).grid(row=0, column=2, padx=6)
+                  bg="#2E7D32", fg="white", command=_print_now).grid(row=0, column=1, padx=6)
         tk.Button(btn_bar, text="Close",            font=("Arial", 11), width=10,
                   command=self.close).grid(row=0, column=3, padx=6)
+
+    def Plain_Priscription_PDF_only(self):
+        SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+        pdf_path = os.path.join(SCRIPT_DIR, "Anupam_Dental_Clinic_Plain_Prescription.pdf")
+        
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.units import mm
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.colors import HexColor
+        from reportlab.lib.utils import ImageReader
+        
+        A4_W, A4_H = A4
+        PAGE_W, PAGE_H = A4_H / 2, A4_W
+        LOGO_PATH = os.path.join(SCRIPT_DIR, "Dental_logo.png")
+        CLINIC_NAME = "ANUPAM DENTAL CLINIC"
+        CLINIC_ADDRESS = "West Gate Vaikom - 686141"
+        CLINIC_PHONE, CLINIC_RESI = self.get_clinic_phone_settings()
+        db_consultants, db_visiting = self.get_doctors_from_db()
+        CONSULTANTS = list(db_consultants)
+        VISITING_DOCTORS = list(db_visiting)
+
+        def draw_logo(c: canvas.Canvas, cx: float, cy: float, r: float):
+            if os.path.isfile(LOGO_PATH):
+                img = ImageReader(LOGO_PATH)
+                iw, ih = img.getSize()
+                box = 2 * r
+                scale = min(box / iw, box / ih)
+                w, h = iw * scale, ih * scale
+                c.drawImage(img, cx - w / 2, cy - h / 2, width=w, height=h, mask="auto", preserveAspectRatio=True)
+                return
+
+        def draw_pdf(c: canvas.Canvas):
+            ink = HexColor("#1a1a1a")
+            c.setFillColor(ink)
+            c.setStrokeColor(ink)
+
+            # Logo
+            draw_logo(c, 20 * mm, PAGE_H - 16 * mm, 9 * mm)
+
+            header_cx = PAGE_W * 0.60 
+            header_cx1 = PAGE_W * 0.85
+
+            c.setFont("Times-Bold", 20)
+            c.drawCentredString(header_cx, PAGE_H - 15 * mm, CLINIC_NAME)
+
+            c.setFont("Helvetica", 8.5)
+            c.drawCentredString(header_cx, PAGE_H - 20 * mm, CLINIC_ADDRESS)
+
+            c.setFont("Helvetica", 9)
+            c.drawCentredString(header_cx1, PAGE_H - 25 * mm, CLINIC_PHONE)
+
+            c.setFont("Helvetica", 9)
+            c.drawCentredString(header_cx1, PAGE_H - 30 * mm, CLINIC_RESI)
+
+            top_line_y = PAGE_H - 32 * mm
+            margin = 1 * mm
+            c.setLineWidth(0.8)
+            c.line(margin, top_line_y, PAGE_W - margin, top_line_y) 
+            c.line(margin + 80, top_line_y - 470, PAGE_W - margin, top_line_y - 470)
+
+            divider_x = margin + 55 * mm
+            bottom_line_y = 12 * mm
+            c.setLineWidth(0.8)
+            c.line(divider_x, top_line_y, divider_x, bottom_line_y)
+            c.rect(divider_x, bottom_line_y, (PAGE_W - margin) - divider_x, top_line_y - bottom_line_y, fill=0, stroke=1)
+
+            # Left column: Consultants / Visiting doctors
+            lx = margin + 3 * mm
+            ly = top_line_y - 4 * mm
+            lh = 4.6 * mm
+
+            for doc in CONSULTANTS:
+                c.setFont("Helvetica-Bold", 7.5)
+                c.drawString(lx, ly, f"{doc['name']},")
+                ly -= lh
+                c.setFont("Helvetica", 6.5)
+                c.drawString(lx, ly, f"{doc['role']}")
+                ly -= lh
+                c.drawString(lx, ly, f"{doc['reg']}")
+                ly -= (lh + 1.5 * mm)
+
+            if VISITING_DOCTORS:
+                ly -= 2 * mm
+                c.setFont("Helvetica-Bold", 7)
+                c.drawString(lx, ly, "VISITING DOCTORS:")
+                ly -= lh
+                for vdoc in VISITING_DOCTORS:
+                    c.setFont("Helvetica-Bold", 7)
+                    c.drawString(lx, ly, f"{vdoc['name']},")
+                    ly -= lh
+                    c.setFont("Helvetica", 6)
+                    c.drawString(lx, ly, f"{vdoc['role']}")
+                    ly -= lh
+                    c.drawString(lx, ly, f"{vdoc['reg']}")
+                    ly -= (lh + 1 * mm)
+
+            # Date box
+            c.setFont("Helvetica", 8)
+            c.drawString(PAGE_W - 30 * mm, PAGE_H - 45 * mm, f"Date: {datetime.now().strftime('%d-%m-%Y')}")
+
+            # Doctor's Notes box
+            note_w = (PAGE_W - 5 * mm) - divider_x
+            note_h = 6.5 * mm
+            note_y = PAGE_H - 140 * mm
+            c.rect(divider_x, note_y, note_w, note_h, fill=0, stroke=1)
+            c.setFont("Helvetica-Bold", 8)
+            c.drawCentredString(divider_x + note_w / 2, note_y + 2 * mm, "Doctor's Notes")
+
+        c = canvas.Canvas(pdf_path, pagesize=(PAGE_W, PAGE_H))
+        draw_pdf(c)
+        c.save()
+        open_file(pdf_path)
+        return pdf_path
     def todayapp(self):
         try:
             from reportlab.lib.pagesizes import A4
@@ -1603,14 +1693,11 @@ class Letter:
                 messagebox.showerror("Missing Library",
                     "ReportLab is required.\nRun:  pip install reportlab")
                 return
-            filepath = filedialog.asksaveasfilename(
-                defaultextension=".pdf", initialfile="Anupam_Dental_Letterhead.pdf",
-                initialdir=SCRIPT_DIR, filetypes=[("PDF files", "*.pdf")],
-                title="Save Letterhead PDF As")
-            if not filepath: return
+            filepath = os.path.join(SCRIPT_DIR, "Anupam_Dental_Clinic_Appointments.pdf")
             try:
                 generate_pdf(filepath)
-                messagebox.showinfo("Done", f"Letterhead saved:\n{filepath}")
+                docx_path = convert_pdf_to_docx(filepath)
+                messagebox.showinfo("Done", f"Appointments sheet saved:\n📄 PDF: {filepath}\n📝 Word: {docx_path}")
                 _open_pdf(filepath)
             except Exception as exc:
                 messagebox.showerror("Error", f"PDF generation failed:\n{exc}")

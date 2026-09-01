@@ -450,12 +450,7 @@ class Card:
             open_file(path)
 
         def _generate_pdf():
-            from tkinter import filedialog
-            filepath = filedialog.asksaveasfilename(
-                defaultextension=".pdf", initialfile="Registration_ID_Card.pdf",
-                initialdir=SCRIPT_DIR, filetypes=[("PDF files", "*.pdf")],
-                title="Save Card PDF As")
-            if not filepath: return
+            filepath = os.path.join(SCRIPT_DIR, "Registration_ID_Card.pdf")
             try:
                 generate_pdf(filepath)
                 docx_path = convert_pdf_to_docx(filepath)
@@ -465,18 +460,13 @@ class Card:
                 messagebox.showerror("Error", f"PDF generation failed:\n{exc}")
 
         def _generate_word():
-            from tkinter import filedialog
-            filepath = filedialog.asksaveasfilename(
-                defaultextension=".docx", initialfile="Registration_ID_Card.docx",
-                initialdir=SCRIPT_DIR, filetypes=[("Word Document", "*.docx")],
-                title="Save Card Word Document As")
-            if not filepath: return
+            filepath = os.path.join(SCRIPT_DIR, "Registration_ID_Card.docx")
             try:
                 tmp_pdf = os.path.join(SCRIPT_DIR, "_card_temp.pdf")
                 generate_pdf(tmp_pdf)
-                convert_pdf_to_docx(tmp_pdf, filepath)
-                messagebox.showinfo("Done", f"Word Card saved:\n{filepath}")
-                open_file(filepath)
+                docx_path = convert_pdf_to_docx(tmp_pdf, filepath)
+                messagebox.showinfo("Done", f"Word Card saved:\n{docx_path}")
+                open_file(docx_path)
             except Exception as exc:
                 messagebox.showerror("Error", f"Word generation failed:\n{exc}")
 
@@ -837,15 +827,7 @@ class Card:
             open_file(path)
 
         def _generate_pdf():
-            from tkinter import filedialog
-            filepath = filedialog.asksaveasfilename(
-                defaultextension=".pdf",
-                initialfile="Anupam_Dental_8up_Cards.pdf",
-                initialdir=SCRIPT_DIR,
-                filetypes=[("PDF files", "*.pdf")],
-                title="Save 8-Up Card Sheet As")
-            if not filepath:
-                return
+            filepath = os.path.join(SCRIPT_DIR, "Anupam_Dental_8up_Cards.pdf")
             try:
                 generate_pdf(filepath)
                 docx_path = convert_pdf_to_docx(filepath)
@@ -855,21 +837,13 @@ class Card:
                 messagebox.showerror("Error", f"PDF generation failed:\n{exc}")
 
         def _generate_word():
-            from tkinter import filedialog
-            filepath = filedialog.asksaveasfilename(
-                defaultextension=".docx",
-                initialfile="Anupam_Dental_8up_Cards.docx",
-                initialdir=SCRIPT_DIR,
-                filetypes=[("Word Document", "*.docx")],
-                title="Save 8-Up Word Sheet As")
-            if not filepath:
-                return
+            filepath = os.path.join(SCRIPT_DIR, "Anupam_Dental_8up_Cards.docx")
             try:
                 tmp_pdf = os.path.join(SCRIPT_DIR, "_8up_cards_temp.pdf")
                 generate_pdf(tmp_pdf)
-                convert_pdf_to_docx(tmp_pdf, filepath)
-                messagebox.showinfo("Done", f"8-up Word sheet saved:\n{filepath}")
-                open_file(filepath)
+                docx_path = convert_pdf_to_docx(tmp_pdf, filepath)
+                messagebox.showinfo("Done", f"8-up Word sheet saved:\n{docx_path}")
+                open_file(docx_path)
             except Exception as exc:
                 messagebox.showerror("Error", f"Word sheet generation failed:\n{exc}")
 

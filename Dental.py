@@ -32,10 +32,35 @@ class dental:
         self.login_password = "admin"
 
 
+        # Global TTK Style configuration for Treeview
+        self.style = ttk.Style()
+        try:
+            self.style.theme_use("clam")
+        except Exception:
+            pass
+        self.style.configure("Treeview",
+                            background="#FFFFFF",
+                            foreground="#000000",
+                            rowheight=25,
+                            fieldbackground="#FFFFFF",
+                            font=("Arial", 10))
+        self.style.configure("Treeview.Heading",
+                            font=("Arial", 10, "bold"))
+        self.style.map("Treeview",
+                       background=[("selected", "#1976D2")],
+                       foreground=[("selected", "#FFFFFF")])
+
         self.menu()
         self.create_nav()
-        self.registration()
-        self.root.mainloop() 
+        self.reports()
+        self.root.mainloop()
+
+    @staticmethod
+    def setup_treeview_style(tree):
+        if tree:
+            tree.config(cursor="hand2")
+            tree.tag_configure("evenrow", background="#E3F2FD", foreground="black")
+            tree.tag_configure("oddrow", background="#F5F5F5", foreground="black")
 
     def menu(self):
         menu_bar = tk.Menu(self.root)

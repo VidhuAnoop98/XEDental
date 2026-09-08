@@ -578,4 +578,4 @@ class Receipt:
             messagebox.showerror("Error", f"Could not generate voucher PDF:\n{exc}")
             return
 
-        open_for_printing(filepath)
+        open_for_printing(filepath)

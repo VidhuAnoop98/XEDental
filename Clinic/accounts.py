@@ -9,19 +9,6 @@ ACCENT_BANK = "#1565c0"   # blue
 INACTIVE_BG = "#e0e0e0"
 INACTIVE_FG = "#616161"
 
-DEFAULT_BANKS = [
-    "State Bank of India",
-    "HDFC Bank",
-    "ICICI Bank",
-    "Axis Bank",
-    "Punjab National Bank",
-    "Bank of Baroda",
-    "Canara Bank",
-    "Union Bank of India",
-    "Bank of India",
-    "IndusInd Bank"
-]
-
 DEFAULT_AC_HEADS = [
     "Doctor Fees",
     "Laboratory Expense",
@@ -76,11 +63,21 @@ def init_db(app=None):
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             bank_code TEXT,
             bank_name TEXT UNIQUE NOT NULL,
+            account_name TEXT,
+            account_no TEXT,
             branch_name TEXT,
             ifsc_code TEXT,
             balance REAL DEFAULT 0.0
         )
     ''')
+    try:
+        cursor.execute("ALTER TABLE Banks ADD COLUMN account_name TEXT")
+    except Exception:
+        pass
+    try:
+        cursor.execute("ALTER TABLE Banks ADD COLUMN account_no TEXT")
+    except Exception:
+        pass
 
     # Journal Entries table
     cursor.execute('''
@@ -101,16 +98,6 @@ def init_db(app=None):
         for head in DEFAULT_AC_HEADS:
             htype = "Income" if "Fees" in head else "Expense"
             cursor.execute("INSERT OR IGNORE INTO Heads (head_name, head_type) VALUES (?, ?)", (head, htype))
-
-    # Seed default Banks if table is empty
-    cursor.execute("SELECT COUNT(*) FROM Banks")
-    if cursor.fetchone()[0] == 0:
-        for idx, bank in enumerate(DEFAULT_BANKS, 1):
-            bcode = f"BNK{idx:03d}"
-            cursor.execute(
-                "INSERT OR IGNORE INTO Banks (bank_code, bank_name, branch_name, ifsc_code, balance) VALUES (?, ?, ?, ?, ?)",
-                (bcode, bank, "Main Branch", "SBIN0000000", 0.0)
-            )
 
     conn.commit()
     conn.close()
@@ -143,7 +130,7 @@ class Accounts:
         ]
 
         y_offset = 200
-        x_offset = 40
+        x_offset = 200
 
         for i, (text, command) in enumerate(col_buttons):
             btn = tk.Button(app.workspace, text=text, font=('Arial', 11), width=20, command=command)
@@ -164,7 +151,7 @@ class Accounts:
         return DEFAULT_AC_HEADS
 
     def get_banks(self):
-        """Fetch bank names from DB or fallback to defaults."""
+        """Fetch bank names from DB."""
         try:
             conn = get_db_connection(self.app)
             cursor = conn.cursor()
@@ -175,7 +162,7 @@ class Accounts:
                 return [r[0] for r in rows]
         except Exception:
             pass
-        return DEFAULT_BANKS
+        return []
 
     def get_next_chs_no(self, mode):
         """Generate auto-incremented voucher/document number."""

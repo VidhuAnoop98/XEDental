@@ -176,17 +176,20 @@ class Lab:
         pat_list_lf = tk.LabelFrame(self.patient, text=" Patient Work Register ",)
         pat_list_lf.grid(row=8, column=0, columnspan=2, sticky="nsew", padx=4, pady=5)
 
-        self.pat_tree = ttk.Treeview(
+        history_tree = ttk.Treeview(
             pat_list_lf, columns=["id", "name", "address"], show="headings", height=6
         )
-        self.pat_tree.heading("id", text="Patient id")
-        self.pat_tree.heading("name", text="Patient Name")
-        self.pat_tree.heading("address", text="Address")
-        self.pat_tree.column("id", width=60)
-        self.pat_tree.column("name", width=140)
-        self.pat_tree.column("address", width=140)
-        self.pat_tree.pack(fill="both", expand=True, padx=2, pady=2)
-        self.pat_tree.bind("<Double-1>", self.on_patient_work_select)
+        self.history_tree = history_tree
+        self.pat_tree = history_tree
+        history_tree.heading("id", text="Patient id")
+        history_tree.heading("name", text="Patient Name")
+        history_tree.heading("address", text="Address")
+        history_tree.column("id", width=60)
+        history_tree.column("name", width=140)
+        history_tree.column("address", width=140)
+        history_tree.pack(fill="both", expand=True, padx=2, pady=2) 
+        history_tree.bind("<Double-1>", self.on_patient_work_select)
+        history_tree.bind("<<TreeviewSelect>>", self.on_patient_work_select)
 
         comm_frame = tk.LabelFrame(self.patient, text=" Comments ")
         comm_frame.grid(row=9, column=0, columnspan=2, sticky="nsew", padx=5, pady=5)
@@ -230,6 +233,9 @@ class Lab:
             date_frame,
             text="Find",
             width=8,
+            bg="#2196F3",
+            fg="white",
+            font=("Arial", 9, "bold"),
             command=self.find_lab,
         ).grid(row=1, column=4, padx=4, pady=2)
 
@@ -254,6 +260,9 @@ class Lab:
         tk.Button(
             work_lf,
             text="Add New Work and Details",
+            bg="#4CAF50",
+            fg="white",
+            font=("Arial", 9, "bold"),
             command=self.add_work_item,
         ).pack(pady=3)
 
@@ -542,15 +551,23 @@ class Lab:
         inner_btn_frame.pack(expand=True)
 
         buttons = [
-            ("Save", self.on_save),
-            ("Preview", self.on_preview),
-            ("Close", self.close_workspace),
-            ("Add New Record", self.clear_all),
-            ("Add New Lab", self.add_new_lab),
+            ("Save", self.on_save, "#4CAF50", "white"),
+            ("Preview", self.on_preview, "#2196F3", "white"),
+            ("Close", self.close_workspace, "#f44336", "white"),
+            ("Add New Record", self.clear_all, "#FF9800", "white"),
+            ("Add New Lab", self.add_new_lab, "#9C27B0", "white"),
         ]
 
-        for text, cmd in buttons:
-            b = tk.Button(inner_btn_frame,text=text,width=14,font=("Arial", 8, "bold"),command=cmd,)
+        for text, cmd, bg_col, fg_col in buttons:
+            b = tk.Button(
+                inner_btn_frame,
+                text=text,
+                width=14,
+                font=("Arial", 9, "bold"),
+                bg=bg_col,
+                fg=fg_col,
+                command=cmd,
+            )
             b.pack(side="left", padx=6, pady=4)
 
         self.load_patient_work_register()
@@ -558,13 +575,13 @@ class Lab:
         left_btn_frame = tk.Frame(self.patient, bg="#D6D3CE") 
         left_btn_frame.grid(row=10, column=0, columnspan=2, sticky="ew", padx=4, pady=5)
 
-        btn_work = tk.Button(left_btn_frame, text="Work", width=9, height=1, font=("Tahoma", 8), relief="raised")
+        btn_work = tk.Button(left_btn_frame, text="Work", width=9, height=1, font=("Tahoma", 8, "bold"), bg="#4CAF50", fg="white", relief="raised")
         btn_work.pack(side="left", padx=2, pady=2)
 
-        btn_shade = tk.Button(left_btn_frame, text="Shade", width=9, height=1, font=("Tahoma", 8), relief="raised")
+        btn_shade = tk.Button(left_btn_frame, text="Shade", width=9, height=1, font=("Tahoma", 8, "bold"), bg="#2196F3", fg="white", relief="raised")
         btn_shade.pack(side="left", padx=2, pady=2)
 
-        btn_update = tk.Button(left_btn_frame, text="Update", width=9, height=1, font=("Tahoma", 8), relief="raised")
+        btn_update = tk.Button(left_btn_frame, text="Update", width=9, height=1, font=("Tahoma", 8, "bold"), bg="#FF9800", fg="white", relief="raised")
         btn_update.pack(side="left", padx=2, pady=2)
 
         lbl_all = tk.Label(left_btn_frame, text="All", fg="red", bg="#D6D3CE", font=("Tahoma", 8))
@@ -662,9 +679,9 @@ class Lab:
 
         btn_frame = tk.Frame(win)
         btn_frame.grid(row=1, column=0, columnspan=2, pady=5)
-        tk.Button(btn_frame, text="Add", width=8, command=save_lab).pack(side="left", padx=4)
-        tk.Button(btn_frame, text="Clear", width=8, command=clear_lab).pack(side="left", padx=4)
-        tk.Button(btn_frame, text="Close", width=8, command=on_close).pack(side="left", padx=4)
+        tk.Button(btn_frame, text="Add", width=8, bg="#4CAF50", fg="white", font=("Arial", 8, "bold"), command=save_lab).pack(side="left", padx=4)
+        tk.Button(btn_frame, text="Clear", width=8, bg="#FF9800", fg="white", font=("Arial", 8, "bold"), command=clear_lab).pack(side="left", padx=4)
+        tk.Button(btn_frame, text="Close", width=8, bg="#f44336", fg="white", font=("Arial", 8, "bold"), command=on_close).pack(side="left", padx=4)
 
         win.protocol("WM_DELETE_WINDOW", on_close)
         lab_name_entry.focus()
@@ -784,60 +801,103 @@ class Lab:
         self.bill_email.delete(0, tk.END)
 
     def load_patient_work_register(self):
-        for item in self.pat_tree.get_children():
-            self.pat_tree.delete(item)
+        tree = getattr(self, 'history_tree', getattr(self, 'pat_tree', None))
+        if not tree:
+            return
+        for item in tree.get_children():
+            tree.delete(item)
 
         try:
             conn = get_db_connection(self.app)
             cursor = conn.cursor()
-            cursor.execute(
-                "SELECT patientid, patientname, notes FROM Lab_Work ORDER BY id DESC"
-            )
+            cursor.execute("SELECT * FROM Appointments ORDER BY id DESC")
             rows = cursor.fetchall()
             conn.close()
-            for r in rows:
-                self.pat_tree.insert("", "end", values=r)
+
+            from registration import Registration
+            r_obj = Registration.__new__(Registration)
+            r_obj.app = self.app
+
+            for row in rows:
+                pid = str(row[0])
+                formatted_id = r_obj.format_patient_id(pid)
+                pname = str(row[1]) if len(row) > 1 and row[1] else ""
+                addr = str(row[5]) if len(row) > 5 and row[5] else (str(row[6]) if len(row) > 6 and row[6] else "")
+                tree.insert("", "end", values=(formatted_id, pname, addr))
         except Exception as e:
             print("Error loading work register:", e)
 
-    def on_patient_work_select(self, event):
-        selected = self.pat_tree.selection()
+    def on_patient_work_select(self, event=None):
+        tree = getattr(self, 'history_tree', getattr(self, 'pat_tree', None))
+        if not tree:
+            return
+        selected = tree.selection()
         if not selected:
             return
-        vals = self.pat_tree.item(selected[0], "values")
+        vals = tree.item(selected[0], "values")
         if not vals:
             return
-        work_id = vals[0]
+
+        formatted_id = str(vals[0]).strip()
+        
+        from registration import Registration
+        r_obj = Registration.__new__(Registration)
+        r_obj.app = self.app
+        pid_num = r_obj.parse_patient_id(formatted_id)
+        if not pid_num:
+            pid_num = formatted_id
+
         try:
             conn = get_db_connection(self.app)
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM Lab_Work WHERE id=?", (work_id,))
+            cursor.execute("SELECT * FROM Appointments WHERE id = ?", (pid_num,))
             row = cursor.fetchone()
             conn.close()
+
             if row:
                 self.clear_patient_fields()
-                if row[1]:
-                    self.bill_patientid.insert(0, str(row[1]))
-                if row[2]:
-                    self.bill_regno.insert(0, str(row[2]))
-                if row[3]:
-                    self.bill_patientname.insert(0, str(row[3]))
-                if row[4]:
-                    self.cb_lab_name.set(str(row[4]))
-                if row[6]:
-                    self.entry_tooth_single.insert(0, str(row[6]))
-                if row[8]:
-                    self.entry_despatch_date.delete(0, tk.END)
-                    self.entry_despatch_date.insert(0, str(row[8]))
-                if row[9]:
-                    self.entry_delivery_date.delete(0, tk.END)
-                    self.entry_delivery_date.insert(0, str(row[9]))
-                if row[11]:
-                    self.entry_rate.delete(0, tk.END)
-                    self.entry_rate.insert(0, str(row[11]))
-                if row[14]:
-                    self.txt_comments.delete("1.0", tk.END)
-                    self.txt_comments.insert("1.0", str(row[14]))
+                formatted_pid = r_obj.format_patient_id(str(row[0]))
+                reg_no = r_obj.format_reg_no(str(row[0]))
+
+                if hasattr(self, 'bill_patientid') and self.bill_patientid:
+                    self.bill_patientid.delete(0, tk.END)
+                    self.bill_patientid.insert(0, formatted_pid)
+
+                if hasattr(self, 'bill_regno') and self.bill_regno:
+                    self.bill_regno.delete(0, tk.END)
+                    self.bill_regno.insert(0, reg_no)
+
+                if hasattr(self, 'bill_patientname') and self.bill_patientname and len(row) > 1 and row[1]:
+                    self.bill_patientname.delete(0, tk.END)
+                    self.bill_patientname.insert(0, str(row[1]))
+
+                if hasattr(self, 'bill_age') and self.bill_age and len(row) > 2 and row[2]:
+                    self.bill_age.delete(0, tk.END)
+                    self.bill_age.insert(0, str(row[2]))
+
+                if hasattr(self, 'bill_gender') and self.bill_gender and len(row) > 3 and row[3]:
+                    self.bill_gender.set(str(row[3]))
+
+                if hasattr(self, 'bill_address1') and self.bill_address1 and len(row) > 5 and row[5]:
+                    self.bill_address1.delete(0, tk.END)
+                    self.bill_address1.insert(0, str(row[5]))
+
+                if hasattr(self, 'bill_address2') and self.bill_address2 and len(row) > 6 and row[6]:
+                    self.bill_address2.delete(0, tk.END)
+                    self.bill_address2.insert(0, str(row[6]))
+
+                if hasattr(self, 'bill_office') and self.bill_office and len(row) > 7 and row[7]:
+                    self.bill_office.delete(0, tk.END)
+                    self.bill_office.insert(0, str(row[7]))
+
+                if hasattr(self, 'bill_residence') and self.bill_residence and len(row) > 8 and row[8]:
+                    self.bill_residence.delete(0, tk.END)
+                    self.bill_residence.insert(0, str(row[8]))
+
+                if hasattr(self, 'bill_email') and self.bill_email and len(row) > 11 and row[11]:
+                    self.bill_email.delete(0, tk.END)
+                    self.bill_email.insert(0, str(row[11]))
+
         except Exception as e:
             print("Error selecting patient work:", e)
 
@@ -855,11 +915,15 @@ class Lab:
             messagebox.showinfo("Search", "Please enter a name to search.")
             return
 
-        for item in self.pat_tree.get_children():
-            vals = self.pat_tree.item(item, "values")
+        tree = getattr(self, 'history_tree', getattr(self, 'pat_tree', None))
+        if not tree:
+            return
+
+        for item in tree.get_children():
+            vals = tree.item(item, "values")
             if len(vals) > 1 and search_term.lower() in str(vals[1]).lower():
-                self.pat_tree.selection_set(item)
-                self.pat_tree.see(item)
+                tree.selection_set(item)
+                tree.see(item)
                 self.on_patient_work_select(None)
                 return
         messagebox.showinfo("Search", f"No record found for '{search_term}'.")
@@ -962,10 +1026,21 @@ class Lab:
                 except Exception as err:
                     messagebox.showerror("Error", str(err))
 
-        tk.Button(win, text="Save Lab", command=save_lab).pack(pady=10)
+        tk.Button(win, text="Save Lab", bg="#4CAF50", fg="white", font=("Arial", 9, "bold"), command=save_lab).pack(pady=10)
 
     def close_workspace(self):
-        if hasattr(self.app, "dental"):
-            self.app.dental()
+        pid = self.patient_data.get("patientid", "") if hasattr(self, 'patient_data') and self.patient_data else ""
+        if not pid and hasattr(self, 'bill_patientid') and self.bill_patientid:
+            pid = self.bill_patientid.get().strip()
+
+        if hasattr(self.app, "registration"):
+            self.app.registration(patient_id=pid if pid else None)
         else:
-            self.app.clear_workspace()
+            from registration import Registration
+            r = Registration(self.app)
+            r.registration_workspace()
+            if pid:
+                try:
+                    r.select_patient_by_id(pid)
+                except Exception:
+                    pass

@@ -1518,6 +1518,9 @@ class Letter:
         btn_zoom_in = tk.Button(ctrl_frame, text="+", font=("Arial", 9, "bold"), command=zoom_in)
         btn_zoom_in.pack(side="left", padx=5)
 
+        btn_reg = tk.Button(ctrl_frame, text="Open Registration Workspace", font=("Arial", 9, "bold"), bg="#4CAF50", fg="white", command=lambda: self.app.registration())
+        btn_reg.pack(side="right", padx=10)
+
         def draw_page_preview(page_idx):
             state["current_page"] = page_idx
             cv.delete("all")
@@ -1575,7 +1578,7 @@ class Letter:
             cv.create_text(ppx(PAGE_W - 18*mm), ppy(PAGE_H - 38*mm), text=f"{CLINIC_RESI}",
                            font=("Arial", max(8, smm(2.8))), fill="#333", anchor="ne")
 
-            top_line_y = PAGE_H - 41 * mm
+            top_line_y = PAGE_H - 43 * mm
             rule_y = ppy(top_line_y)
             cv.create_line(ppx(15 * mm), rule_y, ppx(PAGE_W - 15 * mm), rule_y, fill="#1a1a1a", width=1)
             
@@ -1657,20 +1660,7 @@ class Letter:
 
         draw_page_preview(0)
 
-        # Preview Controls (Zoom & Navigation)
-        ctrl_frame = tk.Frame(ws)
-        ctrl_frame.pack(fill="x", pady=4)
-
-        # Page buttons hidden for single-page preview
-
-        btn_zoom_out = tk.Button(ctrl_frame, text="-", font=("Arial", 9, "bold"), command=zoom_out)
-        btn_zoom_out.pack(side="left", padx=5)
-
-        zoom_lbl = tk.Label(ctrl_frame, text="100%", font=("Arial", 10), bg="white")
-        zoom_lbl.pack(side="left", padx=5)
-
-        btn_zoom_in = tk.Button(ctrl_frame, text="+", font=("Arial", 9, "bold"), command=zoom_in)
-        btn_zoom_in.pack(side="left", padx=5)
+        # Single zoom control bar defined above
 
         btn_bar = tk.Frame(ws)
         btn_bar.pack(pady=8)
@@ -1722,5 +1712,10 @@ class Letter:
                   command=self.close).grid(row=0, column=2, padx=8)
 
     def close(self):
-        self.app.personal()
+        if hasattr(self.app, "registration"):
+            self.app.registration()
+        else:
+            from registration import Registration
+            r = Registration(self.app)
+            r.registration_workspace()
 

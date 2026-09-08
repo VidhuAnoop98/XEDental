@@ -140,18 +140,24 @@ class Suppliers_Register:
 
 
         # --- Right: Calendar ---
-        cal_lf = tk.LabelFrame(top_frame,
-                               font=("Arial", 10, "bold"), bd=2, relief="groove")
-        cal_lf.pack(side="right", fill="y", padx=(4, 0), pady=4)
+        cal_lf = tk.LabelFrame(top_frame, text="Calendar",
+                               font=("Arial", 10, "bold"), bd=2, relief="groove",
+                               width=400, height=300)
+        cal_lf.pack(side="right", padx=(4, 0), pady=4)
+        cal_lf.pack_propagate(False)
+
+        self.sr_start_date.bind("<FocusIn>", lambda e: self.cal_target_var.set("start"))
+        self.sr_end_date.bind("<FocusIn>", lambda e: self.cal_target_var.set("end"))
 
         self.sup_cal = Calendar(cal_lf, selectmode="day",
                                 date_pattern="dd-mm-yyyy", font=("Arial", 10))
-        self.sup_cal.pack(padx=8, pady=8)
+        self.sup_cal.pack(fill="both", expand=True, padx=5, pady=5)
 
         def _on_cal_select(event=None):
             selected = self.sup_cal.get_date()
-            self.sr_start_date.delete(0, "end")
-            self.sr_start_date.insert(0, selected)
+            target = self.sr_end_date if self.cal_target_var.get() == "end" else self.sr_start_date
+            target.delete(0, "end")
+            target.insert(0, selected)
         self.sup_cal.bind("<<CalendarSelected>>", _on_cal_select)
 
         # ── BOTTOM row: Ledger table | Product table ──

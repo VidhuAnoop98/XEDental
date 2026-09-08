@@ -294,6 +294,29 @@ class Bill:
                     "residence": row[8] if row[8] else "",
                     "email": row[11] if row[11] else ""
                 }
+                comm_text = get_patient_comments(self.app, str(row[0]), f"REG-{row[0]:04d}")
+                self.patient_data["comments"] = comm_text
+                if hasattr(self, 'doctor_committs') and self.doctor_committs:
+                    self.doctor_committs.delete("1.0", "end")
+                    if comm_text:
+                        self.doctor_committs.insert("1.0", comm_text)
+
+                # Fetch and populate patient diseases from DB
+                try:
+                    cursor.execute("CREATE TABLE IF NOT EXISTS Patient_Diseases (id INTEGER PRIMARY KEY AUTOINCREMENT, Patient_ID TEXT, Reg_No TEXT, Disease TEXT, Date TEXT, Reading TEXT)")
+                    cursor.execute("SELECT Disease, Date, Reading FROM Patient_Diseases WHERE Patient_ID=? OR Reg_No=? ORDER BY id ASC", (str(row[0]), f"REG-{row[0]:04d}"))
+                    db_diseases = cursor.fetchall()
+                    d_list = [list(dr) for dr in db_diseases]
+                    self.patient_data["diseases"] = d_list
+                    if hasattr(self, 'dis') and self.dis and self.dis.winfo_exists():
+                        for child in self.dis.get_children():
+                            self.dis.delete(child)
+                        for dr in d_list:
+                            self.dis.insert("", "end", values=dr)
+                except Exception as e_dis:
+                    print(f"Error loading diseases: {e_dis}")
+
+                self.sync_bill_tree()
             else:
                 messagebox.showinfo("Not Found", "No patient record found.")
             conn.close()
@@ -315,30 +338,9 @@ class Bill:
         self.reading_entry = tk.Entry(self.disease_frame, width=10)
         self.reading_entry.grid(row=0, column=3, sticky="w", padx=2, pady=2)
 
-        def add_disease():
-            d = self.disease_entry.get()
-            r = self.reading_entry.get()
-            if d or r:
-                current_date = datetime.now().strftime("%d-%m-%Y")
-                dis.insert("", "end", values=(d, current_date, r))
-                self.disease_entry.delete(0, 'end')
-                self.reading_entry.delete(0, 'end')
-
-        def delete_disease():
-            selected = dis.selection()
-            if selected:
-                for item in selected:
-                    dis.delete(item)
-            else:
-                messagebox.showwarning("No Selection", "Please select a disease row to delete.")
-
-        btn_disease_frame = tk.Frame(self.disease_frame)
-        btn_disease_frame.grid(row=0, column=4, padx=2, pady=2)
-        tk.Button(btn_disease_frame, text="Add", font=("Arial", 8), command=add_disease).pack(side="left", padx=1)
-        tk.Button(btn_disease_frame, text="Delete", font=("Arial", 8), fg="red", command=delete_disease).pack(side="left", padx=1)
-
         dis_columns = ("Disease", "Date", "Reading")
         dis = ttk.Treeview(self.disease_frame, columns=dis_columns, show="headings", height=2)
+        self.dis = dis
         dis.heading("Disease", text="Disease")
         dis.heading("Date", text="Date")
         dis.heading("Reading", text="Reading")
@@ -348,6 +350,37 @@ class Bill:
         dis.column("Reading", width=110)
 
         dis.grid(row=1, column=0, columnspan=5, sticky="nsew", padx=2, pady=2)
+
+        def add_disease():
+            d = self.disease_entry.get().strip()
+            r = self.reading_entry.get().strip()
+            if d or r:
+                current_date = datetime.now().strftime("%d-%m-%Y")
+                self.dis.insert("", "end", values=(d, current_date, r))
+                self.disease_entry.delete(0, 'end')
+                self.reading_entry.delete(0, 'end')
+                self.sync_diseases_to_patient_data()
+
+        def delete_disease():
+            if hasattr(self, 'dis') and self.dis:
+                selected = self.dis.selection()
+                if selected:
+                    for item in selected:
+                        self.dis.delete(item)
+                    self.sync_diseases_to_patient_data()
+                else:
+                    messagebox.showwarning("No Selection", "Please select a disease row to delete.")
+
+        btn_disease_frame = tk.Frame(self.disease_frame)
+        btn_disease_frame.grid(row=0, column=4, padx=2, pady=2)
+        tk.Button(btn_disease_frame, text="Add", font=("Arial", 8, "bold"), bg="#4CAF50", fg="white", command=add_disease).pack(side="left", padx=1)
+        tk.Button(btn_disease_frame, text="Delete", font=("Arial", 8, "bold"), bg="#F44336", fg="white", command=delete_disease).pack(side="left", padx=1)
+
+        # Populate diseases from patient_data if available
+        if hasattr(self, 'patient_data') and self.patient_data and "diseases" in self.patient_data:
+            if isinstance(self.patient_data["diseases"], list):
+                for d_row in self.patient_data["diseases"]:
+                    self.dis.insert("", "end", values=d_row)
 
         # --- Details / Action Buttons ---
         self.detials = tk.LabelFrame(self.left_frame, text="Actions", font=("Arial", 10, "bold"))
@@ -412,6 +445,10 @@ class Bill:
             bill_tree.column(col, width=40)
         bill_tree.pack(fill="both", padx=5, pady=(5, 10))
 
+        # Tag configuration for past vs present rows
+        bill_tree.tag_configure("past_row", foreground="#555555")
+        bill_tree.tag_configure("present_row", foreground="#2E7D32")
+
         bill_total_label = tk.Label(self.left_frame, text="Total: ₹0.00", font=("Arial", 12, "bold"), fg="green")
         bill_total_label.pack(padx=10, pady=(0, 10), anchor="e")
 
@@ -424,55 +461,102 @@ class Bill:
                     pass
             bill_total_label.config(text=f"Total: ₹{total:.2f}")
 
+        self.update_bill_total_label = update_bill_total
+        self.sync_bill_tree()
+
         def add_to_treatment():
-            treatment = self.bill_treatment_combo.get()
-            tooth = self.bill_tooth_no.get()
-            amount = self.bill_amount.get()
-            doctor = self.bill_doctor_combo.get()
+            treatment = self.bill_treatment_combo.get().strip()
+            tooth = self.bill_tooth_no.get().strip()
+            amount = self.bill_amount.get().strip()
+            doctor = self.bill_doctor_combo.get().strip()
+            if not doctor:
+                latest_docs = self.get_doctor_names_from_db()
+                if latest_docs:
+                    doctor = latest_docs[0]
+                    self.bill_doctor_combo.set(doctor)
+
+            # Prevent adding payment/receipt items to treatment tree
+            trt_lower = treatment.lower()
+            if any(k in trt_lower for k in ["payment", "receipt", "paid", "cash", "qr code", "advance", "discount"]):
+                messagebox.showwarning("Invalid Entry", "Payment and receipt items cannot be added in Treatment tree.")
+                return
+
             if treatment or amount:
-                bill_tree.insert("", "end", values=(tooth, treatment, amount, doctor))
+                try:
+                    amt_val = float(amount) if amount else 0.0
+                except (ValueError, TypeError):
+                    amt_val = 0.0
+                bill_tree.insert("", "end", values=(
+                    tooth if tooth else "-",
+                    treatment if treatment else "Treatment",
+                    f"{amt_val:.2f}",
+                    doctor if doctor else ""
+                ), tags=("present_row",))
+
+                # Save treatment & doctor commit to database (without payment)
+                pid = self.bill_patientid.get().strip() if hasattr(self, 'bill_patientid') else self.patient_data.get("patientid", "")
+                reg = self.bill_regno.get().strip() if hasattr(self, 'bill_regno') else self.patient_data.get("regno", "")
+                comm_text = self.doctor_committs.get("1.0", "end-1c").strip() if hasattr(self, 'doctor_committs') and self.doctor_committs else ""
+
+                if pid or reg:
+                    try:
+                        conn = get_db_connection(self.app)
+                        cursor = conn.cursor()
+                        b_date = datetime.now().strftime("%d-%m-%Y")
+                        
+                        digits = ''.join(filter(str.isdigit, pid))
+                        pid_num = str(int(digits)) if digits else pid
+                        reg_num = str(int(digits) + 3000) if digits else reg
+                        reg_prefix = f"REG-{reg_num}"
+
+                        cursor.execute("""
+                            SELECT id FROM Bills
+                            WHERE Patient_ID = ? OR Patient_ID = ? OR Reg_No = ? OR Reg_No = ?
+                            ORDER BY id DESC LIMIT 1
+                        """, (pid_num, pid, reg_num, reg_prefix))
+                        bill_row = cursor.fetchone()
+                        if bill_row:
+                            bill_id = bill_row[0]
+                            if comm_text:
+                                cursor.execute("UPDATE Bills SET Comments = ? WHERE id = ?", (comm_text, bill_id))
+                        else:
+                            cursor.execute("INSERT INTO Bills (Patient_ID, Reg_No, Date, Total_Amount, Balance_Due, Comments) VALUES (?, ?, ?, ?, ?, ?)",
+                                           (pid_num, reg_prefix, b_date, amt_val, amt_val, comm_text))
+                            bill_id = cursor.lastrowid
+
+                        cursor.execute("INSERT INTO Bill_Treatments (Bill_ID, Tooth_No, Treatment, Amount, Doctor, Type) VALUES (?, ?, ?, ?, ?, ?)",
+                                       (bill_id, tooth if tooth else "-", treatment if treatment else "Treatment", amt_val, doctor if doctor else "", "Treatment"))
+
+                        # Update bill total amount without payment deduction
+                        cursor.execute("SELECT SUM(Amount) FROM Bill_Treatments WHERE Bill_ID = ? AND (Type IS NULL OR Type = '' OR Type = 'Treatment')", (bill_id,))
+                        tot_res = cursor.fetchone()
+                        new_total = tot_res[0] if (tot_res and tot_res[0] is not None) else amt_val
+                        
+                        cursor.execute("SELECT SUM(Credit) FROM Bill_Accounts WHERE Bill_ID = ?", (bill_id,))
+                        paid_res = cursor.fetchone()
+                        total_paid = paid_res[0] if (paid_res and paid_res[0] is not None) else 0.0
+                        bal_due = new_total - total_paid
+
+                        cursor.execute("UPDATE Bills SET Total_Amount = ?, Balance_Due = ? WHERE id = ?", (new_total, bal_due, bill_id))
+
+                        conn.commit()
+                        conn.close()
+                    except Exception as e:
+                        print(f"Error saving added treatment to DB: {e}")
+
                 self.bill_treatment_combo.set('')
                 self.bill_tooth_no.delete(0, 'end')
                 self.bill_amount.delete(0, 'end')
-                self.bill_doctor_combo.set('')
                 update_bill_total()
-
-                # Save treatment to DB with datenow
-                try:
-                    conn = get_db_connection(self.app)
-                    cursor = conn.cursor()
-                    pid = self.bill_patientid.get().strip() if hasattr(self, 'bill_patientid') else ""
-                    reg = self.bill_regno.get().strip() if hasattr(self, 'bill_regno') else ""
-                    datenow = datetime.now().strftime("%d-%m-%Y")
-                    
-                    try:
-                        amt_val = float(amount) if amount else 0.0
-                    except (ValueError, TypeError):
-                        amt_val = 0.0
-
-                    cursor.execute("SELECT id, Total_Amount FROM Bills WHERE Patient_ID = ? OR Reg_No = ? ORDER BY id DESC LIMIT 1", (pid, reg))
-                    bill_row = cursor.fetchone()
-                    if bill_row:
-                        bill_id = bill_row[0]
-                        curr_total = bill_row[1] if bill_row[1] else 0.0
-                        new_total = curr_total + amt_val
-                        cursor.execute("UPDATE Bills SET Total_Amount = ?, Balance_Due = ? WHERE id = ?", (new_total, new_total, bill_id))
-                    else:
-                        cursor.execute("INSERT INTO Bills (Patient_ID, Reg_No, Date, Total_Amount, Balance_Due, Comments) VALUES (?, ?, ?, ?, ?, ?)",
-                                       (pid, reg, datenow, amt_val, amt_val, ""))
-                        bill_id = cursor.lastrowid
-
-                    cursor.execute("INSERT INTO Bill_Treatments (Bill_ID, Tooth_No, Treatment, Amount, Doctor, Type) VALUES (?, ?, ?, ?, ?, ?)",
-                                   (bill_id, tooth if tooth else "-", treatment, amt_val, doctor, "Treatment"))
-                    conn.commit()
-                    conn.close()
-                except Exception as e:
-                    print(f"Error saving treatment on add: {e}")
 
         def remove_treatment():
             selected = bill_tree.selection()
             if selected:
                 for item in selected:
+                    tags = bill_tree.item(item).get("tags", [])
+                    if "past_row" in tags:
+                        messagebox.showwarning("Cannot Delete", "Past finalized treatments cannot be deleted.")
+                        continue
                     bill_tree.delete(item)
                 update_bill_total()
             else:
@@ -500,11 +584,18 @@ class Bill:
             tk.Button(detail_win, text="Close", font=("Arial", 11),
                       command=detail_win.destroy).pack(pady=10)
 
-        # Initialize empty treatments_list (treatments added only via "Add Treatment" button)
         if not hasattr(self, 'treatments_list'):
             self.treatments_list = []
 
         def save_and_go_to_details():
+            diseases_list = []
+            if hasattr(self, 'dis') and self.dis and self.dis.winfo_exists():
+                for child in self.dis.get_children():
+                    vals = self.dis.item(child)["values"]
+                    if vals:
+                        diseases_list.append(list(vals))
+
+            comm_text = self.doctor_committs.get("1.0", "end-1c").strip() if hasattr(self, 'doctor_committs') and self.doctor_committs else ""
             self.patient_data = {
                 "patientid": self.bill_patientid.get(),
                 "regno": self.bill_regno.get(),
@@ -516,45 +607,72 @@ class Bill:
                 "office": self.bill_office.get(),
                 "residence": self.bill_residence.get(),
                 "email": self.bill_email.get(),
-                "comments": self.bill_notes.get("1.0", "end-1c") if hasattr(self, 'bill_notes') else ""
+                "comments": comm_text,
+                "diseases": diseases_list
             }
             self.treatments_list = []
+            present_treatments = []
+
+            total_amt = 0.0
             for child in bill_tree.get_children():
                 raw_values = bill_tree.item(child)["values"]
+                tags = bill_tree.item(child).get("tags", [])
                 tooth = str(raw_values[0]) if len(raw_values) > 0 else ""
                 treatment = str(raw_values[1]) if len(raw_values) > 1 else ""
                 amount = str(raw_values[2]) if len(raw_values) > 2 else "0.00"
                 doctor = str(raw_values[3]) if len(raw_values) > 3 else ""
-                self.treatments_list.append((tooth, treatment, amount, "", doctor))
 
-            # Save bill & bill treatments to database
+                trt_lower = treatment.lower()
+                if any(k in trt_lower for k in ["payment", "receipt", "paid", "cash", "qr code"]):
+                    continue
+
+                try:
+                    total_amt += float(amount)
+                except (ValueError, TypeError):
+                    pass
+
+                item_tuple = (tooth, treatment, amount, "", doctor)
+                self.treatments_list.append(item_tuple)
+
+                if "present_row" in tags or not tags:
+                    present_treatments.append(item_tuple)
+
+            # Save bill, diseases & ONLY present bill treatments to database (without payment)
             try:
                 conn = get_db_connection(self.app)
                 cursor = conn.cursor()
                 pid = self.patient_data.get("patientid", "").strip()
                 reg = self.patient_data.get("regno", "").strip()
                 b_date = datetime.now().strftime("%d-%m-%Y")
-                
-                total_amt = 0.0
-                for item in self.treatments_list:
-                    try:
-                        total_amt += float(item[2])
-                    except (ValueError, TypeError):
-                        pass
 
-                cursor.execute("SELECT id FROM Bills WHERE Patient_ID = ? OR Reg_No = ? ORDER BY id DESC LIMIT 1", (pid, reg))
+                digits = ''.join(filter(str.isdigit, pid))
+                pid_num = str(int(digits)) if digits else pid
+                reg_num = str(int(digits) + 3000) if digits else reg
+                reg_prefix = f"REG-{reg_num}"
+
+                # Save patient diseases to DB
+                cursor.execute("CREATE TABLE IF NOT EXISTS Patient_Diseases (id INTEGER PRIMARY KEY AUTOINCREMENT, Patient_ID TEXT, Reg_No TEXT, Disease TEXT, Date TEXT, Reading TEXT)")
+                cursor.execute("DELETE FROM Patient_Diseases WHERE Patient_ID = ? OR Reg_No = ?", (pid_num, reg_prefix))
+                for d_item in diseases_list:
+                    d_name = str(d_item[0]) if len(d_item) > 0 else ""
+                    d_date = str(d_item[1]) if len(d_item) > 1 else b_date
+                    d_read = str(d_item[2]) if len(d_item) > 2 else ""
+                    cursor.execute("INSERT INTO Patient_Diseases (Patient_ID, Reg_No, Disease, Date, Reading) VALUES (?, ?, ?, ?, ?)",
+                                   (pid_num, reg_prefix, d_name, d_date, d_read))
+
+                cursor.execute("SELECT id FROM Bills WHERE Patient_ID = ? OR Patient_ID = ? OR Reg_No = ? OR Reg_No = ? ORDER BY id DESC LIMIT 1", (pid_num, pid, reg_num, reg_prefix))
                 bill_row = cursor.fetchone()
                 if bill_row:
                     bill_id = bill_row[0]
-                    cursor.execute("UPDATE Bills SET Total_Amount = ?, Balance_Due = ?, Comments = ? WHERE id = ?",
-                                   (total_amt, total_amt, self.patient_data.get("comments", ""), bill_id))
-                    cursor.execute("DELETE FROM Bill_Treatments WHERE Bill_ID = ?", (bill_id,))
+                    cursor.execute("UPDATE Bills SET Total_Amount = ?, Comments = ? WHERE id = ?",
+                                   (total_amt, comm_text, bill_id))
                 else:
                     cursor.execute("INSERT INTO Bills (Patient_ID, Reg_No, Date, Total_Amount, Balance_Due, Comments) VALUES (?, ?, ?, ?, ?, ?)",
-                                   (pid, reg, b_date, total_amt, total_amt, self.patient_data.get("comments", "")))
+                                   (pid_num, reg_prefix, b_date, total_amt, total_amt, comm_text))
                     bill_id = cursor.lastrowid
 
-                for item in self.treatments_list:
+                # Save present treatments only with Type='Treatment'
+                for item in present_treatments:
                     tooth, trt, amt, _, doc = item
                     try:
                         amt_val = float(amt)
@@ -562,6 +680,18 @@ class Bill:
                         amt_val = 0.0
                     cursor.execute("INSERT INTO Bill_Treatments (Bill_ID, Tooth_No, Treatment, Amount, Doctor, Type) VALUES (?, ?, ?, ?, ?, ?)",
                                    (bill_id, tooth, trt, amt_val, doc, "Treatment"))
+
+                # Re-calculate Total_Amount and Balance_Due without payment deductions
+                cursor.execute("SELECT SUM(Amount) FROM Bill_Treatments WHERE Bill_ID = ? AND (Type IS NULL OR Type = '' OR Type = 'Treatment')", (bill_id,))
+                tot_res = cursor.fetchone()
+                full_total = tot_res[0] if (tot_res and tot_res[0] is not None) else total_amt
+
+                cursor.execute("SELECT SUM(Credit) FROM Bill_Accounts WHERE Bill_ID = ?", (bill_id,))
+                paid_res = cursor.fetchone()
+                total_paid = paid_res[0] if (paid_res and paid_res[0] is not None) else 0.0
+                bal_due = full_total - total_paid
+
+                cursor.execute("UPDATE Bills SET Total_Amount = ?, Balance_Due = ? WHERE id = ?", (full_total, bal_due, bill_id))
 
                 conn.commit()
                 conn.close()
@@ -576,24 +706,24 @@ class Bill:
             d.doctors_detials()
 
         # Action bar buttons
-        btn_prescription = tk.Button(action_bar, text="Prescription", font=("Arial", 11),
-                         command=self.prescription)
-        btn_prescription.pack(side="left", padx=5, pady=5)
-
-        btn_treatment = tk.Button(action_bar, text="Treatment Details", font=("Arial", 11),
-                      command=show_treatment_details)
-        btn_treatment.pack(side="left", padx=5, pady=5)
-
-        btn_removing = tk.Button(action_bar, text="Remove", font=("Arial", 11),
-                     fg="red", command=remove_treatment)
-        btn_removing.pack(side="left", padx=5, pady=5)
-
         btn_bill_next = tk.Button(action_bar, text="Bill →", font=("Arial", 11, "bold"),
                      bg="#2196F3", fg="white", command=save_and_go_to_details)
-        btn_bill_next.pack(side="right", padx=5, pady=5)
+        btn_bill_next.pack(side="left", padx=5, pady=5)
 
-        btn_close = tk.Button(action_bar, text="Close", font=("Arial", 11),
-                  command=self.close)
+        btn_prescription = tk.Button(action_bar, text="Prescription", font=("Arial", 11, "bold"),
+                         bg="#4CAF50", fg="white", command=self.prescription)
+        btn_prescription.pack(side="left", padx=5, pady=5)
+
+        btn_treatment = tk.Button(action_bar, text="Treatment Details", font=("Arial", 11, "bold"),
+                      bg="#009688", fg="white", command=show_treatment_details)
+        btn_treatment.pack(side="left", padx=5, pady=5)
+
+        btn_removing = tk.Button(action_bar, text="Remove", font=("Arial", 11, "bold"),
+                     bg="#F44336", fg="white", command=remove_treatment)
+        btn_removing.pack(side="left", padx=5, pady=5)
+
+        btn_close = tk.Button(action_bar, text="Close", font=("Arial", 11, "bold"),
+                  bg="#F44336", fg="white", command=self.close)
         btn_close.pack(side="right", padx=5, pady=5)
 
         # Teeth chart buttons (top of center frame)
@@ -601,11 +731,11 @@ class Bill:
         teeth_btn_frame.pack(side="top", pady=5)
 
         button_adult = tk.Button(teeth_btn_frame, text="Adult", font=("Arial", 11, "bold"),
-                                 fg="black", command=self.adult_teeth)
+                                 bg="#2196F3", fg="white", command=self.adult_teeth)
         button_adult.pack(side="left", padx=10)
 
         button_child = tk.Button(teeth_btn_frame, text="Child", font=("Arial", 11, "bold"),
-                                 fg="black", command=self.child_teeth)
+                                 bg="#FF9800", fg="white", command=self.child_teeth)
         button_child.pack(side="left", padx=10)
 
         # Teeth chart canvas container (middle of center frame)
@@ -619,12 +749,36 @@ class Bill:
         scroll = tk.Scrollbar(comments_frame)
         scroll.pack(side="right", fill="y")
 
-        self.bill_notes = tk.Text(comments_frame, height=5, font=("Arial", 10), yscrollcommand=scroll.set)
-        self.bill_notes.pack(side="left", fill="both", expand=True, padx=5, pady=5)
-        scroll.config(command=self.bill_notes.yview)
+        self.doctor_committs = tk.Text(comments_frame, height=5, font=("Arial", 10), yscrollcommand=scroll.set)
+        self.doctor_committs.pack(side="left", fill="both", expand=True, padx=5, pady=5)
+        scroll.config(command=self.doctor_committs.yview)
+
+        # Populate doctor_committs text widget
+        comments_text = self.patient_data.get("comments", "") if hasattr(self, 'patient_data') and self.patient_data else ""
+        if not comments_text and hasattr(self, 'patient_data') and self.patient_data:
+            pid = self.patient_data.get("patientid", "")
+            reg = self.patient_data.get("regno", "")
+            comments_text = get_patient_comments(self.app, pid, reg)
+            self.patient_data["comments"] = comments_text
+
+        if hasattr(self, 'doctor_committs') and self.doctor_committs:
+            self.doctor_committs.delete("1.0", "end")
+            if comments_text:
+                self.doctor_committs.insert("1.0", comments_text)
 
         # Show adult teeth by default
         self.adult_teeth()
+
+    def sync_diseases_to_patient_data(self):
+        if not hasattr(self, 'patient_data') or not self.patient_data:
+            self.patient_data = {}
+        diseases_list = []
+        if hasattr(self, 'dis') and self.dis and self.dis.winfo_exists():
+            for child in self.dis.get_children():
+                vals = self.dis.item(child)["values"]
+                if vals:
+                    diseases_list.append(list(vals))
+        self.patient_data["diseases"] = diseases_list
 
     def adult_teeth(self):
         if hasattr(self, 'canvas') and self.canvas is not None:
@@ -786,13 +940,180 @@ class Bill:
             print(f"Error loading bill treatments: {e}")
         return treatments
 
+    def sync_bill_tree(self):
+        if not hasattr(self, 'bill_tree') or not self.bill_tree:
+            return
+
+        for child in self.bill_tree.get_children():
+            self.bill_tree.delete(child)
+
+        pid_val = ""
+        reg_val = ""
+        if hasattr(self, 'patient_data') and self.patient_data:
+            pid_val = str(self.patient_data.get("patientid", "")).strip()
+            reg_val = str(self.patient_data.get("regno", "")).strip()
+        if not pid_val and hasattr(self, 'bill_patientid') and self.bill_patientid:
+            pid_val = self.bill_patientid.get().strip()
+        if not reg_val and hasattr(self, 'bill_regno') and self.bill_regno:
+            reg_val = self.bill_regno.get().strip()
+
+        # 1. Fetch past treatments from database (only Type='Treatment' or NULL, excluding payments)
+        past_rows = []
+        if pid_val or reg_val:
+            try:
+                conn = get_db_connection(self.app)
+                cursor = conn.cursor()
+                digits = ''.join(filter(str.isdigit, pid_val))
+                pid_num = str(int(digits)) if digits else pid_val
+                reg_num = str(int(digits) + 3000) if digits else reg_val
+                reg_prefix = f"REG-{reg_num}"
+
+                cursor.execute("""
+                    SELECT bt.Tooth_No, bt.Treatment, bt.Amount, bt.Doctor
+                    FROM Bill_Treatments bt
+                    JOIN Bills b ON bt.Bill_ID = b.id
+                    WHERE (b.Patient_ID = ? OR b.Patient_ID = ? OR b.Reg_No = ? OR b.Reg_No = ? OR b.Reg_No = ?)
+                      AND (bt.Type IS NULL OR bt.Type = '' OR bt.Type = 'Treatment')
+                    ORDER BY bt.id ASC
+                """, (pid_num, pid_val, reg_num, reg_val, reg_prefix))
+                past_rows = cursor.fetchall()
+                conn.close()
+            except Exception as e:
+                print(f"Error fetching past bill treatments: {e}")
+
+        default_doc = ""
+        if hasattr(self, 'bill_doctor_combo') and self.bill_doctor_combo and self.bill_doctor_combo.get().strip():
+            default_doc = self.bill_doctor_combo.get().strip()
+        else:
+            latest = self.get_doctor_names_from_db()
+            if latest:
+                default_doc = latest[0]
+
+        # Insert past treatments tagged as past_row
+        for row in past_rows:
+            tooth_val, trt_val, amt_val, doc_val = row
+            trt_str = str(trt_val).strip() if trt_val else "Treatment"
+            if "payment" in trt_str.lower() or "receipt" in trt_str.lower():
+                continue
+            try:
+                a_num = float(amt_val) if amt_val else 0.0
+            except (ValueError, TypeError):
+                a_num = 0.0
+            doc_str = str(doc_val).strip() if doc_val and str(doc_val).strip() else default_doc
+            self.bill_tree.insert("", "end", values=(
+                str(tooth_val) if tooth_val else "-",
+                trt_str,
+                f"{a_num:.2f}",
+                doc_str
+            ), tags=("past_row",))
+
+        # 2. Insert present treatments from self.treatments_list tagged as present_row
+        if hasattr(self, 'treatments_list') and self.treatments_list:
+            for item in self.treatments_list:
+                tooth = str(item[0]) if len(item) > 0 and item[0] else "-"
+                trt = str(item[1]) if len(item) > 1 and item[1] else "Treatment"
+                if "payment" in trt.lower() or "receipt" in trt.lower():
+                    continue
+                try:
+                    amt_val = float(item[2]) if len(item) > 2 and item[2] else 0.0
+                except (ValueError, TypeError):
+                    amt_val = 0.0
+                raw_doc = str(item[4]).strip() if len(item) > 4 and item[4] and str(item[4]).strip() else (str(item[3]).strip() if len(item) > 3 and str(item[3]).strip() and not str(item[3]).replace('.','',1).isdigit() else "")
+                doc = raw_doc if raw_doc else default_doc
+
+                self.bill_tree.insert("", "end", values=(
+                    tooth,
+                    trt,
+                    f"{amt_val:.2f}",
+                    doc
+                ), tags=("present_row",))
+
+        if hasattr(self, 'update_bill_total_label'):
+            self.update_bill_total_label()
+
     def close(self):
+        pid = self.patient_data.get("patientid", "") if hasattr(self, 'patient_data') and self.patient_data else ""
+        if not pid and hasattr(self, 'bill_patientid') and self.bill_patientid:
+            pid = self.bill_patientid.get().strip()
+        comm_text = self.doctor_committs.get("1.0", "end-1c").strip() if hasattr(self, 'doctor_committs') and self.doctor_committs else ""
+        if pid and comm_text:
+            reg = self.patient_data.get("regno", "") if hasattr(self, 'patient_data') else ""
+            save_patient_comments(self.app, pid, reg, comm_text)
+
         from registration import Registration
         r = Registration(self.app)
         r.registration_workspace()
+        if pid:
+            try:
+                r.select_patient_by_id(pid)
+            except Exception:
+                pass
+
+def get_patient_comments(app, pid_val, reg_val=""):
+    if not pid_val and not reg_val:
+        return ""
+    try:
+        conn = get_db_connection(app)
+        cursor = conn.cursor()
+        pid_str = str(pid_val).strip() if pid_val else ""
+        reg_str = str(reg_val).strip() if reg_val else ""
+        digits = ''.join(filter(str.isdigit, pid_str))
+        pid_num = str(int(digits)) if digits else pid_str
+        reg_num = str(int(digits) + 3000) if digits else reg_str
+        reg_prefix = f"REG-{reg_num}"
+
+        cursor.execute("""
+            SELECT Comments FROM Bills
+            WHERE (Patient_ID = ? OR Patient_ID = ? OR Reg_No = ? OR Reg_No = ? OR Reg_No = ?)
+              AND Comments IS NOT NULL AND Comments != ''
+            ORDER BY id DESC LIMIT 1
+        """, (pid_num, pid_str, reg_num, reg_str, reg_prefix))
+        row = cursor.fetchone()
+        conn.close()
+        if row and row[0]:
+            return row[0]
+    except Exception as e:
+        print(f"Error fetching patient comments: {e}")
+    return ""
+
+def save_patient_comments(app, pid_val, reg_val, comments_text):
+    if not pid_val and not reg_val:
+        return
+    try:
+        conn = get_db_connection(app)
+        cursor = conn.cursor()
+        pid_str = str(pid_val).strip() if pid_val else ""
+        reg_str = str(reg_val).strip() if reg_val else ""
+        digits = ''.join(filter(str.isdigit, pid_str))
+        pid_num = str(int(digits)) if digits else pid_str
+        reg_num = str(int(digits) + 3000) if digits else reg_str
+        reg_prefix = f"REG-{reg_num}"
+        b_date = datetime.now().strftime("%d-%m-%Y")
+
+        cursor.execute("""
+            SELECT id FROM Bills
+            WHERE Patient_ID = ? OR Patient_ID = ? OR Reg_No = ? OR Reg_No = ? OR Reg_No = ?
+            ORDER BY id DESC LIMIT 1
+        """, (pid_num, pid_str, reg_num, reg_str, reg_prefix))
+        row = cursor.fetchone()
+        if row:
+            cursor.execute("UPDATE Bills SET Comments = ? WHERE id = ?", (comments_text, row[0]))
+        else:
+            cursor.execute("INSERT INTO Bills (Patient_ID, Reg_No, Date, Total_Amount, Balance_Due, Comments) VALUES (?, ?, ?, ?, ?, ?)",
+                           (pid_num, reg_prefix, b_date, 0.0, 0.0, comments_text))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Error saving patient comments: {e}")
 
 def get_db_connection(app=None):
     if app and hasattr(app, "get_db_connection"):
         return app.get_db_connection()
+    if app and hasattr(app, "db_path") and app.db_path and os.path.exists(app.db_path):
+        return sqlite3.connect(app.db_path)
     script_dir = os.path.dirname(os.path.abspath(__file__))
+    parent_dir = os.path.abspath(os.path.join(script_dir, ".."))
+    root_db = os.path.join(parent_dir, "dental.db")
+    if os.path.exists(root_db):
+        return sqlite3.connect(root_db)
     return sqlite3.connect(os.path.join(script_dir, "dental.db"))

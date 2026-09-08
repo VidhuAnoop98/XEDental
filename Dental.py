@@ -47,12 +47,13 @@ class dental:
         self.style.configure("Treeview.Heading",
                             font=("Arial", 10, "bold"))
         self.style.map("Treeview",
+        
                        background=[("selected", "#1976D2")],
                        foreground=[("selected", "#FFFFFF")])
 
         self.menu()
         self.create_nav()
-        self.reports()
+        self.registration()
         self.root.mainloop()
 
     @staticmethod
@@ -143,8 +144,11 @@ class dental:
         tk.Label(self.workspace,text="Kottayam Dist",font=("Arial", 20,"bold")).place(x=575, y=470)
         tk.Label(self.workspace,text="Kerala - 686141",font=("Arial", 20,"bold")).place(x=570, y=505)
 
-    def registration(self):
-        Registration(self)  
+    def registration(self, patient_id=None):
+        reg = Registration(self)
+        if patient_id:
+            reg.select_patient_by_id(patient_id)
+        return reg
 
     def personal(self):
         Personal(self)

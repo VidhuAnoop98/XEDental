@@ -542,7 +542,7 @@ class Reports:
                 
             # Table headers (7 columns - Full Size Font Size 5)
             headers = ["No", "Patient ID", "Patient Name", "Address", "Particulars/Narrations", "Receipts", "Payments"]
-            x_pt_positions = [15, 45, 110, 200, 300, 425, 500]
+            x_pt_positions = [15, 45, 110, 200, 300, 450, 525]
             
             cv.create_line(ppx(15), ppy(y_pt + 6), ppx(PAGE_W - 15), ppy(y_pt + 6), fill="black", width=1)
             for i, h in enumerate(headers):
@@ -579,8 +579,8 @@ class Reports:
                 y_pt_totals = y_pt - 50
                 cv.create_line(ppx(15), ppy(y_pt_totals + 5), ppx(PAGE_W - 15), ppy(y_pt_totals + 5), fill="black", width=1)
                 y_pt_totals -= 15
-                cv.create_text(ppx(340), ppy(y_pt_totals), text="Total Cash:", font=("Helvetica", spt(8), "bold"), fill="black", anchor="w")
-                cv.create_text(ppx(500), ppy(y_pt_totals), text=f"{state['total_cash']:,.2f}", font=("Helvetica", spt(8), "bold"), fill="black", anchor="w")
+                # cv.create_text(ppx(340), ppy(y_pt_totals), text="Total Cash:", font=("Helvetica", spt(8), "bold"), fill="black", anchor="w")
+                # cv.create_text(ppx(500), ppy(y_pt_totals), text=f"{state['total_cash']:,.2f}", font=("Helvetica", spt(8), "bold"), fill="black", anchor="w")
                 y_pt_totals -= 12
                 cv.create_text(ppx(340), ppy(y_pt_totals), text="Total QRcode:", font=("Helvetica", spt(8), "bold"), fill="black", anchor="w")
                 cv.create_text(ppx(500), ppy(y_pt_totals), text=f"{state['total_qrcode']:,.2f}", font=("Helvetica", spt(8), "bold"), fill="black", anchor="w")

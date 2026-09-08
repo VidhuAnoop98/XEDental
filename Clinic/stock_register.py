@@ -74,8 +74,23 @@ class Stock_Register:
         bottom_frame.pack(side="bottom", fill="both", expand=True, padx=5, pady=5)
 
         # Calendar
-        self.stock_cal = Calendar(right, selectmode="day", date_pattern="dd-mm-yyyy", width=40, height=30)
-        self.stock_cal.pack(padx=10, pady=10)
+        cal_lf = tk.LabelFrame(right, text="Calendar",
+                               font=("Arial", 10, "bold"), bd=2, relief="groove",
+                               width=400, height=300)
+        cal_lf.pack(side="right", padx=(10, 0), pady=2)
+        cal_lf.pack_propagate(False)
+
+
+        self.sup_cal = Calendar(cal_lf, selectmode="day",
+                                date_pattern="dd-mm-yyyy", font=("Arial", 10))
+        self.sup_cal.pack(fill="both", expand=True, padx=5, pady=5)
+
+        def _on_cal_select(event=None):
+            selected = self.sup_cal.get_date()
+            target = self.end_date if self.cal_target_var.get() == "end" else self.start_date
+            target.delete(0, "end")
+            target.insert(0, selected)
+        self.sup_cal.bind("<<CalendarSelected>>", _on_cal_select)
 
         # Product List Treeview
         columns = ("Products Name",)
@@ -100,6 +115,12 @@ class Stock_Register:
         tk.Label(middle, text="End Date", font=('Arial', 10, 'bold')).grid(row=0, column=2, padx=5, pady=5, sticky="e")
         self.end_date = tk.Entry(middle, width=15)
         self.end_date.grid(row=0, column=3, padx=5, pady=5)
+
+        self.sr_start_date = self.start_date
+        self.sr_end_date = self.end_date
+
+        self.start_date.bind("<FocusIn>", lambda e: self.cal_target_var.set("start"))
+        self.end_date.bind("<FocusIn>", lambda e: self.cal_target_var.set("end"))
 
         # Ctrl+; → insert today's date
         def _bind_date(entry_widget):

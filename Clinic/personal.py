@@ -47,7 +47,7 @@ class Personal:
         y_offset = 100
         for i, (text, command) in enumerate(col1_buttons):
             btn = tk.Button(workspace, text=text, font=('Arial', 11), width=20, command=command)
-            btn.place(x=100, y=y_offset + i * 35)
+            btn.place(x=200, y=y_offset + i * 35)
 
     def get_db_connection(self):
         if hasattr(self.app, "get_db_connection"):
@@ -796,6 +796,17 @@ class Personal:
             return
 
         symbol = self._get_currency_symbol()
+        pdf_symbol = (
+            symbol.replace('<i class="fa-solid fa-indian-rupee-sign"></i>', "Rs. ")
+            .replace("fa-indian-rupee-sign", "Rs. ")
+            .replace("₹", "Rs. ")
+            .strip()
+        )
+        if not pdf_symbol or pdf_symbol == "Rs." or pdf_symbol == "Rs":
+            pdf_symbol = "Rs. "
+        elif pdf_symbol and not pdf_symbol.endswith(" "):
+            pdf_symbol = pdf_symbol + " "
+
         currency = self._get_clinic_setting("treatment_currency", "INR")
         script_dir = os.path.dirname(os.path.abspath(__file__))
         output_path = os.path.join(
@@ -806,14 +817,14 @@ class Personal:
         pdf = canvas.Canvas(output_path, pagesize=A4)
         pdf.setFont("Helvetica-Bold", 16)
         pdf.setFillColor(colors.HexColor("#1A365D"))
-        pdf.drawCentredString(width / 2.0, height - 50, "Treatment Fee List")
+        pdf.drawCentredString(width / 2.0, height - 50, f"Treatment Fee List ({len(rows)})")
 
         pdf.setFont("Helvetica", 10)
         pdf.setFillColor(colors.HexColor("#4A5568"))
         pdf.drawCentredString(
             width / 2.0,
             height - 68,
-            f"Currency: {currency} ({symbol})   |   Date: {datetime.now().strftime('%d-%m-%Y')}",
+            f"Currency: {currency} ({pdf_symbol.strip()})   |   Date: {datetime.now().strftime('%d-%m-%Y')}",
         )
 
         y = height - 100
@@ -835,13 +846,12 @@ class Personal:
                 pdf.setFont("Helvetica", 10)
             pdf.drawString(50, y, str(idx))
             pdf.drawString(100, y, treatment)
-            pdf.drawRightString(width - 170, y, f"{symbol}{rate:.2f}")
-            pdf.drawRightString(width - 50, y, f"{symbol}{amount:.2f}")
+            pdf.drawRightString(width - 170, y, f"{pdf_symbol}{rate:.2f}")
+            pdf.drawRightString(width - 50, y, f"{pdf_symbol}{amount:.2f}")
             y -= 18
 
         pdf.save()
-        if messagebox.askyesno("Print", f"PDF saved.\nOpen file now?\n\n{output_path}"):
-            self._open_file(output_path)
+        self._open_file(output_path)
 
     def _treatment_currency(self):
         win = tk.Toplevel(self.app.root)
@@ -926,7 +936,11 @@ class Personal:
     def _consultant_wise_rates(self):
         win = tk.Toplevel(self.app.root)
         win.title("Consultants Wise Rates")
-        win.geometry("620x420")
+        width = 620
+        height = 420
+        x = (win.winfo_screenwidth() - width) // 2
+        y = (win.winfo_screenheight() - height) // 2
+        win.geometry(f"{width}x{height}+{x}+{y}")
         win.transient(self.app.root)
         win.grab_set()
 
@@ -957,7 +971,7 @@ class Personal:
         tree_frame.pack(fill="both", expand=True, padx=10, pady=(0, 5))
 
         columns = ("Doctor", "Treatment", "Rate")
-        rate_tree = ttk.Treeview(tree_frame, columns=columns, show="headings", height=12)
+        rate_tree = ttk.Treeview(tree_frame, columns=columns, show="headings", height=7)
         rate_tree.heading("Doctor", text="Doctor")
         rate_tree.heading("Treatment", text="Treatment")
         rate_tree.heading("Rate", text="Rate")
@@ -1103,11 +1117,11 @@ class Personal:
 
         btn_frame = tk.Frame(win)
         btn_frame.pack(fill="x", padx=10, pady=10)
-        tk.Button(btn_frame, text="Add", width=10, command=add_consultant_rate).pack(side="left", padx=4)
-        tk.Button(btn_frame, text="Update", width=10, command=update_consultant_rate).pack(side="left", padx=4)
-        tk.Button(btn_frame, text="Delete", width=10, command=delete_consultant_rate).pack(side="left", padx=4)
-        tk.Button(btn_frame, text="Clear", width=10, command=clear_rate_form).pack(side="left", padx=4)
-        tk.Button(btn_frame, text="Close", width=10, command=win.destroy).pack(side="right", padx=4)
+        tk.Button(btn_frame, text="Add", width=10, bg="#4CAF50", fg="white", font=("Arial", 9, "bold"), command=add_consultant_rate).pack(side="left", padx=4)
+        tk.Button(btn_frame, text="Update", width=10, bg="#2196F3", fg="white", font=("Arial", 9, "bold"), command=update_consultant_rate).pack(side="left", padx=4)
+        tk.Button(btn_frame, text="Delete", width=10, bg="#f44336", fg="white", font=("Arial", 9, "bold"), command=delete_consultant_rate).pack(side="left", padx=4)
+        tk.Button(btn_frame, text="Clear", width=10, bg="#FF9800", fg="white", font=("Arial", 9, "bold"), command=clear_rate_form).pack(side="left", padx=4)
+        tk.Button(btn_frame, text="Close", width=10, bg="#f44336", fg="white", font=("Arial", 9, "bold"), command=win.destroy).pack(side="right", padx=4)
 
         load_consultant_rates()
 
@@ -1154,16 +1168,16 @@ class Personal:
 
         action_frame = tk.Frame(win, bg="white")
         action_frame.pack(fill="x", padx=10, pady=(0, 8))
-        tk.Button(action_frame, text="Add", width=10, command=self._add_treatment_fee).pack(
+        tk.Button(action_frame, text="Add", width=10, bg="#4CAF50", fg="white", font=("Arial", 9, "bold"), command=self._add_treatment_fee).pack(
             side="left", padx=4
         )
-        tk.Button(action_frame, text="Update", width=10, command=self._update_treatment_fee).pack(
+        tk.Button(action_frame, text="Update", width=10, bg="#2196F3", fg="white", font=("Arial", 9, "bold"), command=self._update_treatment_fee).pack(
             side="left", padx=4
         )
-        tk.Button(action_frame, text="Delete", width=10, command=self._delete_treatment_fee).pack(
+        tk.Button(action_frame, text="Delete", width=10, bg="#f44336", fg="white", font=("Arial", 9, "bold"), command=self._delete_treatment_fee).pack(
             side="left", padx=4
         )
-        tk.Button(action_frame, text="Clear", width=10, command=self._clear_treatment_fee_form).pack(
+        tk.Button(action_frame, text="Clear", width=10, bg="#FF9800", fg="white", font=("Arial", 9, "bold"), command=self._clear_treatment_fee_form).pack(
             side="left", padx=4
         )
 
@@ -1193,6 +1207,9 @@ class Personal:
         btn_current = tk.Button(
             btn_frame,
             text="Treatment Currency",
+            bg="#009688",
+            fg="white",
+            font=("Arial", 9, "bold"),
             command=self._treatment_currency,
             width=18,
         )
@@ -1200,6 +1217,9 @@ class Personal:
         btn_rates = tk.Button(
             btn_frame,
             text="Consultants wise rates",
+            bg="#9C27B0",
+            fg="white",
+            font=("Arial", 9, "bold"),
             command=self._consultant_wise_rates,
             width=18,
         )
@@ -1207,11 +1227,14 @@ class Personal:
         btn_print = tk.Button(
             btn_frame,
             text="Print Treatment List",
+            bg="#2196F3",
+            fg="white",
+            font=("Arial", 9, "bold"),
             command=self._print_treatment_list,
             width=18,
         )
         btn_print.pack(side="right", padx=5)
-        btn_close = tk.Button(btn_frame, text="Close", command=win.destroy, width=12)
+        btn_close = tk.Button(btn_frame, text="Close", bg="#f44336", fg="white", font=("Arial", 9, "bold"), command=win.destroy, width=12)
         btn_close.pack(side="right", padx=5)
 
         self._selected_fee_id = None
@@ -1323,7 +1346,7 @@ class Personal:
         self.shade_name_entry = tk.Entry(left, width=25)
         self.shade_name_entry.grid(row=0, column=1, padx=5, pady=5)
 
-        self.shade_tree = ttk.Treeview(left, columns=("Shade",), show="headings", height=12)
+        self.shade_tree = ttk.Treeview(left, columns=("Shade",), show="headings", height=10)
         self.shade_tree.heading("Shade", text="Shade")
         self.shade_tree.column("Shade", width=220)
         self.shade_tree.grid(row=1, column=0, columnspan=2, sticky="nsew")
@@ -1340,7 +1363,7 @@ class Personal:
             middle,
             columns=("LabName",),
             show="headings",
-            height=12
+            height=10
         )
         self.lab_tree_shade.heading("LabName", text="Lab Name")
         self.lab_tree_shade.column("LabName", width=250)
@@ -1358,7 +1381,7 @@ class Personal:
         self.work_entry = tk.Entry(right, width=25)
         self.work_entry.grid(row=0, column=1, padx=5, pady=5)
 
-        self.work_tree = ttk.Treeview(right, columns=("Works",), show="headings", height=12)
+        self.work_tree = ttk.Treeview(right, columns=("Works",), show="headings", height=10)
         self.work_tree.heading("Works", text="Works")
         self.work_tree.column("Works", width=220)
         self.work_tree.grid(row=1, column=0, columnspan=2, sticky="nsew")
@@ -1701,6 +1724,20 @@ class Personal:
         format1.column("Increment Type", width=180, anchor="center")
         format1.column("Selection", width=90, anchor="center")
 
+        def save_pattern_db(pattern):
+            try:
+                db_p = getattr(self.app, "db_path", "dental.db")
+                if not os.path.exists(db_p):
+                    db_p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dental.db")
+                conn = sqlite3.connect(db_p)
+                cursor = conn.cursor()
+                cursor.execute("CREATE TABLE IF NOT EXISTS Clinic_Settings (key TEXT PRIMARY KEY, value TEXT)")
+                cursor.execute("INSERT OR REPLACE INTO Clinic_Settings (key, value) VALUES ('patient_id_format', ?)", (pattern,))
+                conn.commit()
+                conn.close()
+            except Exception as e:
+                print(f"Error saving ID format pattern: {e}")
+
         def set_selected(item_id):
             for child in format1.get_children():
                 values = list(format1.item(child, "values"))
@@ -1712,11 +1749,48 @@ class Personal:
             format1.item(item_id, values=values)
             format1_entry.delete(0, tk.END)
             format1_entry.insert(0, values[1])
+            save_pattern_db(values[1])
 
-        format1.insert("", "end", values=("1", "YYYYMMDD-001", "Daily", "☐"))
-        format1.insert("", "end", values=("2", "MM-DD/001", "Financial Year", "☐"))
-        format1.insert("", "end", values=("3", "MM/001", "Monthly", "☐"))
-        format1.insert("", "end", values=("4", "YYYYMMDD/001", "Yearly", "☐"))
+        default_rows = [
+            ("1", "YYYYMMDD-001", "Daily"),
+            ("2", "MM-DD/001", "Financial Year"),
+            ("3", "MM/001", "Monthly"),
+            ("4", "YYYYMMDD/001", "Yearly")
+        ]
+
+        for r_id, r_pat, r_type in default_rows:
+            format1.insert("", "end", values=(r_id, r_pat, r_type, "☐"))
+
+        # Fetch current pattern from Clinic_Settings
+        current_pattern = ""
+        try:
+            db_p = getattr(self.app, "db_path", "dental.db")
+            if not os.path.exists(db_p):
+                db_p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dental.db")
+            conn = sqlite3.connect(db_p)
+            cursor = conn.cursor()
+            cursor.execute("SELECT value FROM Clinic_Settings WHERE key='patient_id_format'")
+            r = cursor.fetchone()
+            conn.close()
+            if r and r[0]:
+                current_pattern = r[0].strip()
+        except Exception:
+            pass
+
+        selected_item_id = None
+        if current_pattern:
+            for child in format1.get_children():
+                if format1.item(child, "values")[1] == current_pattern:
+                    selected_item_id = child
+                    break
+            if not selected_item_id:
+                new_id = str(len(format1.get_children()) + 1)
+                selected_item_id = format1.insert("", "end", values=(new_id, current_pattern, "Custom", "☐"))
+
+        if selected_item_id:
+            set_selected(selected_item_id)
+        elif format1.get_children():
+            set_selected(format1.get_children()[0])
 
         def toggle_checkbox(event):
             item = format1.identify_row(event.y)
@@ -1732,7 +1806,10 @@ class Personal:
 
             existing = [format1.item(child, "values")[1] for child in format1.get_children()]
             if pattern in existing:
-                messagebox.showwarning("Warning", "This pattern already exists")
+                for child in format1.get_children():
+                    if format1.item(child, "values")[1] == pattern:
+                        set_selected(child)
+                        break
                 return
 
             new_id = str(len(format1.get_children()) + 1)
@@ -1868,7 +1945,10 @@ class Personal:
 
 
     def Edit_Medicine(self):
-        pass
+        from prescription import Prescription
+        p = Prescription(self.app)
+        p.return_to = 'personal'
+        p.edit_medicine()
 
     def Edit_Disease_Complaints(self):
         self.app.clear_workspace()
@@ -2160,7 +2240,10 @@ class Personal:
     
     
     def close(self):
-        self.app.personal()
+        if hasattr(self.app, "registration"):
+            self.app.registration()
+        else:
+            self.app.personal()
     
         
         

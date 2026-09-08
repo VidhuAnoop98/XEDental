@@ -24,7 +24,7 @@ class Materials:
 
         for i, (text, command) in enumerate(buttons):
             btn = tk.Button(app.workspace, text=text, font=('Arial', 11), width=22,command=command)
-            btn.place(x=40, y=260 + i * 35)
+            btn.place(x=200, y=280 + i * 45)
 
     def get_db_connection(self):
         if hasattr(self.app, "get_db_connection"):

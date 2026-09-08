@@ -80,6 +80,26 @@ class Doctors:
 
         # tk.Label(top_bar, text="Doctor's Details & Accounts", font=("Arial", 14, "bold")).pack(side="left", padx=20)
 
+        # ================ Bottom Action Bar ================
+        bottom_bar = tk.Frame(self.app.workspace)
+        bottom_bar.pack(side="bottom", fill="x", padx=10, pady=5)
+
+        btn_bill = tk.Button(bottom_bar, text="← Back to Bill", font=("Arial", 11, "bold"),
+                             bg="#FF9800", fg="white", command=self.bill)
+        btn_bill.pack(side="left", padx=10)
+
+        btn_print = tk.Button(bottom_bar, text="Print Invoice / Receipt", font=("Arial", 11, "bold"),
+                              bg="#4CAF50", fg="white", command=lambda: self.generate_bill_pdf(getattr(self, 'doc_tree', None), getattr(self, 'acc_tree', None)))
+        btn_print.pack(side="left", padx=10)
+
+        btn_save_db = tk.Button(bottom_bar, text="Save & Finalize Bill", font=("Arial", 11, "bold"),
+                                bg="#2196F3", fg="white", command=lambda: self.save_bill_db(getattr(self, 'doc_tree', None), getattr(self, 'acc_tree', None)))
+        btn_save_db.pack(side="left", padx=10)
+
+        btn_close_details = tk.Button(bottom_bar, text="Close", font=("Arial", 11, "bold"),
+                                      bg="#f44336", fg="white", command=self.close)
+        btn_close_details.pack(side="right", padx=10)
+
         # --- Main content ---
         self.main_content = tk.Frame(self.app.workspace)
         self.main_content.pack(fill="both", expand=True, padx=5, pady=5)
@@ -285,7 +305,7 @@ class Doctors:
 
         self.update_total = update_total
 
-        def add_payment():
+        def add_payment(event=None):
             selected = doc_tree.selection()
             paid_str = self.amount_paid_entry.get().strip()
             selected_doc = self.doctors_entry.get().strip()
@@ -295,20 +315,54 @@ class Doctors:
                 messagebox.showwarning("Input Required", "Please enter Amount Paid.")
                 return
 
+            try:
+                p_val = float(paid_str)
+                formatted_paid = f"{p_val:.2f}"
+            except ValueError:
+                messagebox.showwarning("Input Error", "Please enter a valid numeric Amount Paid.")
+                return
+
             if selected:
-                item_id = selected[0]
-                vals = list(doc_tree.item(item_id)["values"])
-                vals[3] = paid_str
-                if len(vals) > 4 and not vals[4]:
-                    vals[4] = selected_doc
-                if len(vals) > 5:
-                    vals[5] = pay_mode
+                for item_id in selected:
+                    vals = list(doc_tree.item(item_id)["values"])
+                    while len(vals) < 5:
+                        vals.append("")
+                    vals[3] = formatted_paid
+                    if not vals[4] or not str(vals[4]).strip():
+                        vals[4] = selected_doc
+                    if len(vals) > 5:
+                        vals[5] = pay_mode
+                    else:
+                        vals.append(pay_mode)
+                    doc_tree.item(item_id, values=vals)
+            else:
+                unpaid_item = None
+                for child in doc_tree.get_children():
+                    v = doc_tree.item(child)["values"]
+                    if len(v) <= 3 or not v[3] or str(v[3]).strip() in ["", "0.00"]:
+                        unpaid_item = child
+                        break
+
+                if unpaid_item:
+                    vals = list(doc_tree.item(unpaid_item)["values"])
+                    while len(vals) < 5:
+                        vals.append("")
+                    vals[3] = formatted_paid
+                    if not vals[4] or not str(vals[4]).strip():
+                        vals[4] = selected_doc
+                    if len(vals) > 5:
+                        vals[5] = pay_mode
+                    else:
+                        vals.append(pay_mode)
+                    doc_tree.item(unpaid_item, values=vals)
                 else:
-                    vals.append(pay_mode)
-                doc_tree.item(item_id, values=vals)
+                    payment_desc = f"Payment ({pay_mode})"
+                    doc_tree.insert("", "end", values=("-", payment_desc, "0.00", formatted_paid, selected_doc, pay_mode))
 
             self.amount_paid_entry.delete(0, 'end')
             update_total()
+
+        self.amount_paid_entry.bind("<Return>", add_payment)
 
         def delete_row():
             selected = doc_tree.selection()
@@ -326,7 +380,7 @@ class Doctors:
             selected = doc_tree.selection()
             if selected:
                 vals = doc_tree.item(selected[0])["values"]
-                if len(vals) > 3 and vals[3]:
+                if len(vals) > 3 and vals[3] and str(vals[3]).strip():
                     self.amount_paid_entry.delete(0, 'end')
                     self.amount_paid_entry.insert(0, str(vals[3]))
                 elif len(vals) > 2 and vals[2]:
@@ -341,23 +395,31 @@ class Doctors:
         for item in self.treatments_list:
             tooth = item[0] if len(item) > 0 and item[0] else "-"
             treatment = item[1] if len(item) > 1 else ""
-            amount = item[2] if len(item) > 2 else "0.00"
+            try:
+                amount = f"{float(item[2]):.2f}" if len(item) > 2 and item[2] else "0.00"
+            except (ValueError, TypeError):
+                amount = item[2] if len(item) > 2 else "0.00"
 
-            if len(item) >= 6:
-                amount_paid = item[3] if len(item) > 3 else ""
-                doc = item[4] if len(item) > 4 and item[4] else ""
-            elif len(item) >= 5:
-                # legacy format: (tooth, treatment, amount, doctor, type)
-                amount_paid = ""
-                doc = item[3] if len(item) > 3 and item[3] else ""
+            amount_paid = ""
+            doc = ""
+            if len(item) >= 5:
+                # check if index 3 is amount_paid or doc
+                try:
+                    p_num = float(item[3])
+                    amount_paid = f"{p_num:.2f}"
+                    doc = item[4] if len(item) > 4 else ""
+                except (ValueError, TypeError):
+                    doc = item[3] if item[3] else ""
+                    if len(item) > 4 and item[4]:
+                        try:
+                            p_num = float(item[4])
+                            amount_paid = f"{p_num:.2f}"
+                        except (ValueError, TypeError):
+                            pass
             elif len(item) == 4:
-                amount_paid = ""
-                doc = item[3] if len(item) > 3 and item[3] else "" 
-            else:
-                amount_paid = ""
-                doc = ""
+                doc = item[3] if item[3] else ""
 
-            doc_tree.insert("", "end", values=(tooth, treatment, amount, amount_paid, doc))
+            doc_tree.insert("", "end", values=(tooth, treatment, amount, amount_paid, doc), tags=("present_row",))
         update_total()
 
         if self.patient_data.get("patientid") and not doc_tree.get_children():
@@ -367,29 +429,35 @@ class Doctors:
         self.accounts = tk.LabelFrame(self.right_frame, text="Accounts", font=("Arial", 10, "bold"))
         self.accounts.pack(side="bottom", fill="both", expand=True, padx=5, pady=5)
 
-        # Account input row
-        acc_input_frame = tk.Frame(self.accounts)
-        acc_input_frame.pack(fill="x", padx=10, pady=(5, 0))
+        # Account input row for adding present entries
+        # acc_input_frame = tk.Frame(self.accounts)
+        # acc_input_frame.pack(fill="x", padx=10, pady=(5, 0))
 
-        # tk.Label(acc_input_frame, text="Date:").grid(row=0, column=0, padx=3, pady=2)
+        # tk.Label(acc_input_frame, text="Date:").grid(row=0, column=0, padx=2, pady=2)
         # self.acc_date_entry = tk.Entry(acc_input_frame, width=10)
         # self.acc_date_entry.insert(0, datetime.now().strftime("%d-%m-%Y"))
-        # self.acc_date_entry.grid(row=0, column=1, padx=3, pady=2)
+        # self.acc_date_entry.grid(row=0, column=1, padx=2, pady=2)
 
-        # tk.Label(acc_input_frame, text="Debit:").grid(row=0, column=2, padx=3, pady=2)
+        # tk.Label(acc_input_frame, text="Particulars:").grid(row=0, column=2, padx=2, pady=2)
+        # self.acc_particulars_entry = tk.Entry(acc_input_frame, width=14)
+        # self.acc_particulars_entry.grid(row=0, column=3, padx=2, pady=2)
+
+        # tk.Label(acc_input_frame, text="Debit:").grid(row=0, column=4, padx=2, pady=2)
         # self.acc_debit_entry = tk.Entry(acc_input_frame, width=8)
-        # self.acc_debit_entry.grid(row=0, column=3, padx=3, pady=2)
+        # self.acc_debit_entry.grid(row=0, column=5, padx=2, pady=2)
 
-        # tk.Label(acc_input_frame, text="Credit:").grid(row=0, column=4, padx=3, pady=2)
+        # tk.Label(acc_input_frame, text="Credit:").grid(row=0, column=6, padx=2, pady=2)
         # self.acc_credit_entry = tk.Entry(acc_input_frame, width=8)
-        # self.acc_credit_entry.grid(row=0, column=5, padx=3, pady=2)
+        # self.acc_credit_entry.grid(row=0, column=7, padx=2, pady=2)
 
-        # tk.Label(acc_input_frame, text="Particulars:").grid(row=0, column=6, padx=3, pady=2)
-        # self.acc_particulars_entry = tk.Entry(acc_input_frame, width=12)
-        # self.acc_particulars_entry.grid(row=0, column=7, padx=3, pady=2)
+        # btn_add_acc = tk.Button(acc_input_frame, text="+ Add Present Entry", font=("Arial", 9, "bold"), bg="#4CAF50", fg="white", command=self.add_manual_acc_item)
+        # btn_add_acc.grid(row=0, column=8, padx=4, pady=2)
+
+        # btn_del_acc = tk.Button(acc_input_frame, text="Delete Entry", font=("Arial", 9, "bold"), bg="#F44336", fg="white", command=self.delete_acc_row)
+        # btn_del_acc.grid(row=0, column=9, padx=4, pady=2)
 
         acc_columns = ("Date", "Debit", "Credit", "Particulars", "Balance")
-        self.acc_tree = ttk.Treeview(self.accounts, column=acc_columns, show="headings", height=4)
+        self.acc_tree = ttk.Treeview(self.accounts, columns=acc_columns, show="headings", height=4)
         for col in acc_columns:
             self.acc_tree.heading(col, text=col)
             self.acc_tree.column(col, width=80)
@@ -401,54 +469,7 @@ class Doctors:
         # Balance label
         self.balance_label = tk.Label(self.accounts, text="Balance: ₹0.00", font=("Arial", 11, "bold"), fg="#D32F2F")
 
-        def calculate_balance():
-            self.sync_doc_tree_to_acc_tree()
-
-        calculate_balance()
-
-        def add_acc_item():
-            date = self.acc_date_entry.get()
-            debit = self.acc_debit_entry.get()
-            credit = self.acc_credit_entry.get()
-            particulars = self.acc_particulars_entry.get()
-            if date or debit or credit or particulars:
-                # Calculate running balance
-                balance = 0.0
-                for child in acc_tree.get_children():
-                    values = acc_tree.item(child)["values"]
-                    try:
-                        balance += float(values[1]) if values[1] else 0.0
-                    except (ValueError, IndexError):
-                        pass
-                    try:
-                        balance -= float(values[2]) if values[2] else 0.0
-                    except (ValueError, IndexError):
-                        pass
-                try:
-                    balance += float(debit) if debit else 0.0
-                except ValueError:
-                    pass
-                try:
-                    balance -= float(credit) if credit else 0.0
-                except ValueError:
-                    pass
-                self.acc_tree.insert("", "end", values=(date, debit, credit, particulars, f"{balance:.2f}"))
-                if hasattr(self, 'acc_debit_entry') and self.acc_debit_entry:
-                    self.acc_debit_entry.delete(0, 'end')
-                if hasattr(self, 'acc_credit_entry') and self.acc_credit_entry:
-                    self.acc_credit_entry.delete(0, 'end')
-                if hasattr(self, 'acc_particulars_entry') and self.acc_particulars_entry:
-                    self.acc_particulars_entry.delete(0, 'end')
-                calculate_balance()
-
-        def delete_acc_row():
-            selected = self.acc_tree.selection()
-            if selected:
-                for item in selected:
-                    self.acc_tree.delete(item)
-                calculate_balance()
-            else:
-                messagebox.showwarning("No Selection", "Please select a row to delete.")
+        self.sync_doc_tree_to_acc_tree()
 
         self.acc_tree.pack(fill="both", expand=True, padx=10, pady=5)
         self.balance_label.pack(padx=10, pady=5, anchor="e")
@@ -483,25 +504,65 @@ class Doctors:
                 self.acc_tree.insert("", "end", values=item)
             calculate_balance()
 
-        # ================ Bottom Action Bar ================
-        bottom_bar = tk.Frame(self.app.workspace)
-        bottom_bar.pack(side="bottom", fill="x", padx=10, pady=10)
 
-        btn_bill = tk.Button(bottom_bar, text="← Back to Bill", font=("Arial", 11, "bold"),
-                             bg="#FF9800", fg="white", command=self.bill)
-        btn_bill.pack(side="left", padx=10)
 
-        btn_print = tk.Button(bottom_bar, text="Print Invoice / Receipt", font=("Arial", 11, "bold"),
-                              bg="#4CAF50", fg="white", command=lambda: self.generate_bill_pdf(doc_tree, self.acc_tree))
-        btn_print.pack(side="left", padx=10)
+    def add_manual_acc_item(self):
+        if not hasattr(self, 'manual_present_acc_items'):
+            self.manual_present_acc_items = []
 
-        btn_save_db = tk.Button(bottom_bar, text="Save & Finalize Bill", font=("Arial", 11, "bold"),
-                                bg="#2196F3", fg="white", command=lambda: self.save_bill_db(doc_tree, self.acc_tree))
-        btn_save_db.pack(side="left", padx=10)
+        date_val = self.acc_date_entry.get().strip() if hasattr(self, 'acc_date_entry') else datetime.now().strftime("%d-%m-%Y")
+        particulars_val = self.acc_particulars_entry.get().strip() if hasattr(self, 'acc_particulars_entry') else ""
+        
+        try:
+            debit_val = float(self.acc_debit_entry.get().strip()) if hasattr(self, 'acc_debit_entry') and self.acc_debit_entry.get().strip() else 0.0
+        except ValueError:
+            debit_val = 0.0
 
-        btn_close_details = tk.Button(bottom_bar, text="Close", font=("Arial", 11, "bold"),
-                                      bg="#f44336", fg="white", command=self.close)
-        btn_close_details.pack(side="right", padx=10)
+        try:
+            credit_val = float(self.acc_credit_entry.get().strip()) if hasattr(self, 'acc_credit_entry') and self.acc_credit_entry.get().strip() else 0.0
+        except ValueError:
+            credit_val = 0.0
+
+        if not particulars_val and debit_val == 0.0 and credit_val == 0.0:
+            messagebox.showwarning("Input Error", "Please enter Particulars, Debit, or Credit amount.")
+            return
+
+        if not particulars_val:
+            particulars_val = "Additional Charge" if debit_val > 0 else "Payment Received"
+
+        self.manual_present_acc_items.append({
+            "date": date_val or datetime.now().strftime("%d-%m-%Y"),
+            "debit": debit_val,
+            "credit": credit_val,
+            "particulars": particulars_val
+        })
+
+        if hasattr(self, 'acc_debit_entry'): self.acc_debit_entry.delete(0, 'end')
+        if hasattr(self, 'acc_credit_entry'): self.acc_credit_entry.delete(0, 'end')
+        if hasattr(self, 'acc_particulars_entry'): self.acc_particulars_entry.delete(0, 'end')
+
+        self.sync_doc_tree_to_acc_tree()
+
+    def delete_acc_row(self):
+        if not hasattr(self, 'acc_tree') or not self.acc_tree:
+            return
+        selected = self.acc_tree.selection()
+        if selected:
+            for item in selected:
+                vals = self.acc_tree.item(item)["values"]
+                tags = self.acc_tree.item(item).get("tags", [])
+                if "past_row" in tags:
+                    messagebox.showwarning("Cannot Delete", "Past finalized accounts cannot be deleted from present bill.")
+                    continue
+                if hasattr(self, 'manual_present_acc_items') and vals:
+                    self.manual_present_acc_items = [
+                        m for m in self.manual_present_acc_items
+                        if not (m["particulars"] == str(vals[3]) and float(m["debit"]) == float(vals[1] or 0) and float(m["credit"]) == float(vals[2] or 0))
+                    ]
+                self.acc_tree.delete(item)
+            self.sync_doc_tree_to_acc_tree()
+        else:
+            messagebox.showwarning("No Selection", "Please select a present entry to delete.")
 
     def sync_doc_tree_to_acc_tree(self):
         if not hasattr(self, 'acc_tree') or not self.acc_tree:
@@ -512,6 +573,43 @@ class Doctors:
         date_str = datetime.now().strftime("%d-%m-%Y")
         running_balance = 0.0
 
+        pid_val = ""
+        if hasattr(self, 'patient_data') and self.patient_data:
+            pid_val = self.patient_data.get("patientid", "")
+        if not pid_val and hasattr(self, 'bill_patientid') and self.bill_patientid:
+            pid_val = self.bill_patientid.get().strip()
+
+        past_rows = []
+        if pid_val:
+            try:
+                conn = get_db_connection(self.app)
+                cursor = conn.cursor()
+                pid_str = str(pid_val).strip()
+                reg_str = f"REG-{int(pid_str):04d}" if pid_str.isdigit() else pid_str
+                cursor.execute("""
+                    SELECT ba.Date, ba.Debit, ba.Credit, ba.Particulars, ba.Balance
+                    FROM Bill_Accounts ba
+                    JOIN Bills b ON ba.Bill_ID = b.id
+                    WHERE b.Patient_ID = ? OR b.Reg_No = ?
+                    ORDER BY ba.id ASC
+                """, (pid_str, reg_str))
+                past_rows = cursor.fetchall()
+                conn.close()
+            except Exception as e:
+                print(f"Error fetching past accounts: {e}")
+
+        has_today_in_past = False
+        for row in past_rows:
+            date_val, debit_val, credit_val, part_val, bal_val = row
+            d_num = float(debit_val) if debit_val else 0.0
+            c_num = float(credit_val) if credit_val else 0.0
+            running_balance += d_num - c_num
+            if str(date_val).strip() == date_str:
+                has_today_in_past = True
+            row_tag = ("past_row", "debit_row" if d_num > 0 or c_num == 0 else "credit_row")
+            self.acc_tree.insert("", "end", values=(date_val, f"{d_num:.2f}", f"{c_num:.2f}", part_val, f"{running_balance:.2f}"), tags=row_tag)
+
+        has_present_items = False
         if hasattr(self, 'doc_tree') and self.doc_tree:
             for child in self.doc_tree.get_children():
                 vals = self.doc_tree.item(child)["values"]
@@ -527,7 +625,11 @@ class Doctors:
                 except (ValueError, TypeError):
                     credit = 0.0
 
-                # 1. Treatment Row (Debit charge - Red)
+                if debit == 0 and credit == 0:
+                    continue
+
+                has_present_items = True
+
                 if debit > 0 or credit == 0:
                     running_balance += debit
                     self.acc_tree.insert("", "end", values=(
@@ -536,9 +638,8 @@ class Doctors:
                         "0.00",
                         particulars,
                         f"{running_balance:.2f}"
-                    ), tags=("debit_row",))
+                    ), tags=("present_row", "debit_row"))
 
-                # 2. Next Add Payment Row (Credit payment - Green) if payment exists
                 if credit > 0:
                     running_balance -= credit
                     mode_str = str(vals[5]) if len(vals) > 5 and vals[5] else (self.pay_mode_combo.get().strip() if hasattr(self, 'pay_mode_combo') and self.pay_mode_combo else "Cash")
@@ -549,7 +650,41 @@ class Doctors:
                         f"{credit:.2f}",
                         payment_desc,
                         f"{running_balance:.2f}"
-                    ), tags=("credit_row",))
+                    ), tags=("present_row", "credit_row"))
+
+        # Also append manual present entries
+        if hasattr(self, 'manual_present_acc_items'):
+            for item in self.manual_present_acc_items:
+                m_date = item.get("date", date_str)
+                m_deb = float(item.get("debit", 0.0))
+                m_crd = float(item.get("credit", 0.0))
+                m_part = item.get("particulars", "Entry")
+
+                if m_deb > 0 or m_crd == 0:
+                    has_present_items = True
+                    running_balance += m_deb
+                    self.acc_tree.insert("", "end", values=(
+                        m_date,
+                        f"{m_deb:.2f}",
+                        "0.00",
+                        m_part,
+                        f"{running_balance:.2f}"
+                    ), tags=("present_row", "debit_row"))
+
+                if m_crd > 0:
+                    has_present_items = True
+                    running_balance -= m_crd
+                    self.acc_tree.insert("", "end", values=(
+                        m_date,
+                        "0.00",
+                        f"{m_crd:.2f}",
+                        m_part,
+                        f"{running_balance:.2f}"
+                    ), tags=("present_row", "credit_row"))
+
+        if past_rows and not has_present_items and not has_today_in_past:
+            row_tag = ("past_row", "debit_row" if running_balance > 0 else "credit_row")
+            self.acc_tree.insert("", "end", values=(date_str, "0.00", "0.00", "Balance B/F", f"{running_balance:.2f}"), tags=row_tag)
 
         if hasattr(self, 'balance_label') and self.balance_label:
             lbl_color = "#D32F2F" if running_balance > 0 else "#2E7D32"
@@ -567,7 +702,9 @@ class Doctors:
             pid_str = str(patient_id).strip()
             reg_str = f"REG-{int(pid_str):04d}" if pid_str.isdigit() else pid_str
             cursor.execute("""
-                SELECT bt.Tooth_No, bt.Treatment, bt.Amount, '', bt.Doctor
+                SELECT bt.Tooth_No, bt.Treatment, bt.Amount,
+                       COALESCE((SELECT SUM(ba.Credit) FROM Bill_Accounts ba WHERE ba.Bill_ID = bt.Bill_ID AND (ba.Particulars = bt.Treatment OR ba.Particulars = 'Payment Received')), 0.0) AS Paid,
+                       bt.Doctor
                 FROM Bill_Treatments bt
                 JOIN Bills b ON bt.Bill_ID = b.id
                 WHERE b.Patient_ID = ? OR b.Reg_No = ?
@@ -580,8 +717,10 @@ class Doctors:
                 tooth = r[0] if r[0] else "-"
                 treatment = r[1] if r[1] else ""
                 amount = f"{float(r[2]):.2f}" if r[2] else "0.00"
+                paid_val = float(r[3]) if r[3] else 0.0
+                paid_str = f"{paid_val:.2f}" if paid_val > 0 else ""
                 doc = r[4] if r[4] else ""
-                self.doc_tree.insert("", "end", values=(tooth, treatment, amount, "", doc))
+                self.doc_tree.insert("", "end", values=(tooth, treatment, amount, paid_str, doc), tags=("past_row",))
             if hasattr(self, 'update_total') and callable(self.update_total):
                 self.update_total()
         except Exception as e:
@@ -635,7 +774,55 @@ class Doctors:
             print(f"Error loading accounts: {e}")
 
     def bill(self):
-        """Navigate back to the Bill view, passing current data."""
+        """Navigate back to the Bill view, passing updated patient data, treatment items, and account items."""
+        if hasattr(self, 'bill_patientid') and self.bill_patientid:
+            self.patient_data["patientid"] = self.bill_patientid.get().strip()
+        if hasattr(self, 'bill_regno') and self.bill_regno:
+            self.patient_data["regno"] = self.bill_regno.get().strip()
+        if hasattr(self, 'bill_patientname') and self.bill_patientname:
+            self.patient_data["patientname"] = self.bill_patientname.get().strip()
+        if hasattr(self, 'bill_address1') and self.bill_address1:
+            self.patient_data["address1"] = self.bill_address1.get().strip()
+        if hasattr(self, 'bill_address2') and self.bill_address2:
+            self.patient_data["address2"] = self.bill_address2.get().strip()
+        if hasattr(self, 'bill_age') and self.bill_age:
+            self.patient_data["age"] = self.bill_age.get().strip()
+        if hasattr(self, 'bill_gender') and self.bill_gender:
+            self.patient_data["gender"] = self.bill_gender.get().strip()
+        if hasattr(self, 'bill_office') and self.bill_office:
+            self.patient_data["office"] = self.bill_office.get().strip()
+        if hasattr(self, 'bill_residence') and self.bill_residence:
+            self.patient_data["residence"] = self.bill_residence.get().strip()
+        if hasattr(self, 'bill_email') and self.bill_email:
+            self.patient_data["email"] = self.bill_email.get().strip()
+        if hasattr(self, 'bill_notes') and self.bill_notes:
+            self.patient_data["comments"] = self.bill_notes.get("1.0", "end-1c").strip()
+
+        # Sync doc_tree items back to treatments_list
+        if hasattr(self, 'doc_tree') and self.doc_tree:
+            updated_trts = []
+            for child in self.doc_tree.get_children():
+                vals = self.doc_tree.item(child)["values"]
+                if vals:
+                    tooth = str(vals[0]) if len(vals) > 0 and vals[0] else "-"
+                    trt = str(vals[1]) if len(vals) > 1 and vals[1] else ""
+                    amt = str(vals[2]) if len(vals) > 2 and vals[2] else "0.00"
+                    paid = str(vals[3]) if len(vals) > 3 and vals[3] else ""
+                    doc = str(vals[4]) if len(vals) > 4 and vals[4] else ""
+                    updated_trts.append((tooth, trt, amt, paid, doc))
+            if updated_trts:
+                self.treatments_list = updated_trts
+
+        # Sync acc_tree items back to accounts_list
+        if hasattr(self, 'acc_tree') and self.acc_tree:
+            updated_accs = []
+            for child in self.acc_tree.get_children():
+                vals = self.acc_tree.item(child)["values"]
+                if vals:
+                    updated_accs.append(vals)
+            if updated_accs:
+                self.accounts_list = updated_accs
+
         from bill import Bill  # lazy import to avoid circular dependency
         b = Bill(self.app)
         b.patient_data = self.patient_data
@@ -670,11 +857,14 @@ class Doctors:
         # Accounts summary
         total_debit = 0.0
         total_credit = 0.0
-        accounts = []
+        new_accounts = []
+        all_accounts = []
         acc_tree_obj = acc_tree if acc_tree is not None else getattr(self, 'acc_tree', None)
         if acc_tree_obj:
             for child in acc_tree_obj.get_children():
-                values = acc_tree_obj.item(child)["values"]
+                item_data = acc_tree_obj.item(child)
+                values = item_data["values"]
+                tags = item_data.get("tags", [])
                 try:
                     deb = float(values[1]) if values[1] else 0.0
                 except (ValueError, IndexError):
@@ -685,7 +875,9 @@ class Doctors:
                     crd = 0.0
                 total_debit += deb
                 total_credit += crd
-                accounts.append(values)
+                all_accounts.append(values)
+                if "present_row" in tags or not tags or "past_row" not in tags:
+                    new_accounts.append(values)
 
         balance_due = total_debit - total_credit
         current_date = datetime.now().strftime("%d-%m-%Y")
@@ -714,8 +906,9 @@ class Doctors:
                     VALUES (?, ?, ?, ?, ?, ?)
                 ''', (bill_id, str(treat[0]), str(treat[1]), float(treat[2]), doctor_name, ttype))
 
-            # Insert accounts
-            for acc in accounts:
+            # Insert accounts (saving newly added present entries)
+            accounts_to_save = new_accounts if new_accounts else all_accounts
+            for acc in accounts_to_save:
                 cursor.execute('''
                     INSERT INTO Bill_Accounts (Bill_ID, Date, Debit, Credit, Particulars, Balance)
                     VALUES (?, ?, ?, ?, ?, ?)

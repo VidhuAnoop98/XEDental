@@ -622,6 +622,13 @@ class Prescription:
         self.load_medicine_edit_data()
 
     def close(self):
+        if getattr(self, 'return_to', None) == 'personal':
+            try:
+                from personal import Personal
+                p = Personal(self.app)
+                return
+            except Exception as e:
+                print(f"Error returning to Personal workspace: {e}")
         try:
             from bill import Bill
             b = Bill(self.app)

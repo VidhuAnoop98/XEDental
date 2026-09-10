@@ -97,10 +97,11 @@ class Joural:
         action_frame = tk.Frame(self.right_frame)
         action_frame.pack(fill="x", padx=15, pady=10)
 
-        tk.Button(action_frame, text="Add", font=('Arial', 10), width=14, command=self.clear_journal_form).pack(side="left", padx=5)
-        tk.Button(action_frame, text="Save Entry", font=('Arial', 10, 'bold'), bg="#2e7d32", fg="white", width=15, command=self.save_journal).pack(side="left", padx=5)
-        tk.Button(action_frame, text="Delete Selected", font=('Arial', 10), width=15, command=self.delete_journal).pack(side="left", padx=5)
-        tk.Button(action_frame, text="Close", font=('Arial', 10), width=12, command=self.close).pack(side="left", padx=5)
+        tk.Button(action_frame, text="Add", font=('Arial', 10, 'bold'), bg="#2196F3", fg="white", width=12, command=self.clear_journal_form).pack(side="left", padx=5)
+        tk.Button(action_frame, text="Save Entry", font=('Arial', 10, 'bold'), bg="#1565C0", fg="white", width=14, command=self.save_journal).pack(side="left", padx=5)
+        tk.Button(action_frame, text="Delete Selected", font=('Arial', 10, 'bold'), bg="#C62828", fg="white", width=14, command=self.delete_journal).pack(side="left", padx=5)
+        tk.Button(action_frame, text="Refresh", font=('Arial', 10, 'bold'), bg="#00897B", fg="white", width=10, command=self.load_journal_data).pack(side="left", padx=5)
+        tk.Button(action_frame, text="Close", font=('Arial', 10, 'bold'), bg="#757575", fg="white", width=10, command=self.close).pack(side="left", padx=5)
 
         self.total_journal_var = tk.StringVar(value="Total Journal: ₹0.00")
         total_lbl = tk.Label(action_frame, textvariable=self.total_journal_var, font=('Arial', 11, 'bold'), fg="navy")

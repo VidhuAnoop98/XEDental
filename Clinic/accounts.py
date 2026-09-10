@@ -309,8 +309,9 @@ class Accounts:
 
         btn_frame = tk.Frame(win, bg="white")
         btn_frame.pack(pady=15)
-        tk.Button(btn_frame, text="Save Deposit", font=("Arial", 10, "bold"), bg="green", fg="white", width=14, command=save_deposit).pack(side="left", padx=10)
-        tk.Button(btn_frame, text="Close", font=("Arial", 10), bg="gray", fg="white", width=10, command=win.destroy).pack(side="left", padx=10)
+        tk.Button(btn_frame, text="Save Deposit", font=("Arial", 10, "bold"), bg="#00838F", fg="white", width=14, command=save_deposit).pack(side="left", padx=6)
+        tk.Button(btn_frame, text="Refresh", font=("Arial", 10, "bold"), bg="#00897B", fg="white", width=10, command=lambda: [win.destroy(), self.deposit()]).pack(side="left", padx=6)
+        tk.Button(btn_frame, text="Close", font=("Arial", 10, "bold"), bg="#757575", fg="white", width=10, command=win.destroy).pack(side="left", padx=6)
 
     # =========================================================================
     # WITHDRAWAL
@@ -416,8 +417,9 @@ class Accounts:
 
         btn_frame = tk.Frame(win, bg="white")
         btn_frame.pack(pady=15)
-        tk.Button(btn_frame, text="Save Withdrawal", font=("Arial", 10, "bold"), bg="green", fg="white", width=16, command=save_withdrawal).pack(side="left", padx=10)
-        tk.Button(btn_frame, text="Close", font=("Arial", 10), bg="gray", fg="white", width=10, command=win.destroy).pack(side="left", padx=10)
+        tk.Button(btn_frame, text="Save Withdrawal", font=("Arial", 10, "bold"), bg="#D84315", fg="white", width=16, command=save_withdrawal).pack(side="left", padx=6)
+        tk.Button(btn_frame, text="Refresh", font=("Arial", 10, "bold"), bg="#00897B", fg="white", width=10, command=lambda: [win.destroy(), self.withdrawal()]).pack(side="left", padx=6)
+        tk.Button(btn_frame, text="Close", font=("Arial", 10, "bold"), bg="#757575", fg="white", width=10, command=win.destroy).pack(side="left", padx=6)
 
     
     def head(self):

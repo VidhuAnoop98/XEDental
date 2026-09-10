@@ -3,15 +3,19 @@ from tkinter import ttk, messagebox
 from tkcalendar import Calendar
 import sqlite3
 import os
+import re
+from datetime import datetime
 from files import get_db_connection
 
 class Patient_Details:
-    def __init__(self, app):
+    def __init__(self, app, patient_id=None):
         self.app = app
         self.app.clear_workspace()
         self.app.workspace = tk.Frame(app.root, bd=3, relief="solid")
         self.app.workspace.pack(padx=10, pady=10, fill="both", expand=True)
         self.patient_details()
+        if patient_id:
+            self.select_patient_by_id(patient_id)
 
     def patient_details(self):
         self.app.clear_workspace()
@@ -35,61 +39,57 @@ class Patient_Details:
         right_frame = tk.Frame(main_frame)
         right_frame.pack(side="left", fill="both", expand=True)
 
-        # ── Patient Details Form ──────────────────────
-        form_lf = tk.LabelFrame(
-            left_frame, text="Patient Record",
-            font=("Arial", 10, "bold"), padx=8, pady=6
-        )
-        form_lf.pack(fill="x", padx=6, pady=(6, 2))
+        # ── Patient Details Form (pat) ──────────────────────
+        pat = tk.LabelFrame(left_frame, text="Patient Details", font=("Arial", 10, "bold"))
+        pat.pack(fill="x", padx=6, pady=(6, 2))
 
-        self.f_patientid = tk.Entry(form_lf, width=12, justify="center")
-        self.f_patientid.grid(row=0, column=1, padx=4, pady=2, sticky="w")
+        # Row 0: Patient ID & Reg No
+        self.f_patientid = tk.Entry(pat, justify="center", width=18)
+        self.f_patientid.grid(row=0, column=0, padx=5, pady=2, sticky="w")
 
-        self.f_regno = tk.Entry(form_lf, width=12, justify="center")
-        self.f_regno.grid(row=0, column=2, padx=4, pady=2, sticky="w")
+        self.f_regno = tk.Entry(pat, justify="center", width=18)
+        self.f_regno.grid(row=0, column=1, padx=5, pady=2, sticky="w")
 
-        self.f_patientname = tk.Entry(form_lf, width=18)
-        self.f_patientname.grid(row=1, column=1, padx=4, pady=2, sticky="we")
+        # Row 1: Patient Name & Address 1
+        self.f_patientname = tk.Entry(pat, justify="center", width=18)
+        self.f_patientname.grid(row=1, column=0, padx=5, pady=2, sticky="w")
 
-        self.f_address1 = tk.Entry(form_lf, width=18)
-        self.f_address1.grid(row=1, column=2,padx=4, pady=2, sticky="we")
+        self.f_address1 = tk.Entry(pat, justify="center", width=18)
+        self.f_address1.grid(row=1, column=1, padx=5, pady=2, sticky="w")
 
-        self.f_address2 = tk.Entry(form_lf, width=28)
-        self.f_address2.grid(row=2, column=1, columnspan=2, padx=4, pady=2, sticky="we")
+        # Row 2: Address 2
+        self.f_address2 = tk.Entry(pat, width=38)
+        self.f_address2.grid(row=2, column=0, columnspan=2, padx=5, pady=2, sticky="we")
 
-        age=tk.Label(form_lf,text="Age")
-        age.grid(row=3,column=1,padx=4,pady=2,sticky="w")
-        self.f_age = tk.Entry(form_lf, width=6)
-        self.f_age.grid(row=4, column=1, padx=4, pady=2, sticky="w")
+        # Row 3: Age & Sex
+        tk.Label(pat, text="Age:", font=("Arial", 8)).grid(row=3, column=0, sticky="w", padx=5, pady=2)
+        self.f_age = tk.Entry(pat, width=6)
+        self.f_age.grid(row=4, column=0, sticky="w", padx=5, pady=2)
 
-        gender=tk.Label(form_lf,text="Gender")
-        gender.grid(row=3,column=2,padx=4,pady=2,sticky="w")
-        self.f_gender = ttk.Combobox(
-            form_lf, values=["Male", "Female"], state="readonly", width=10
-        )
-        self.f_gender.grid(row=4, column=2, padx=4, pady=2, sticky="w")
+        tk.Label(pat, text="Sex:", font=("Arial", 8)).grid(row=3, column=1, sticky="w", padx=5, pady=2)
+        self.f_gender = ttk.Combobox(pat, values=["Male", "Female"], state="readonly", width=10)
+        self.f_gender.grid(row=4, column=1, sticky="w", padx=5, pady=2)
 
-        self.f_mobile1 = tk.Entry(form_lf, width=14)
-        self.f_mobile1.grid(row=5, column=1, padx=4, pady=2, sticky="w")
+        # Row 4: Phone Numbers (Mobile 1 & Mobile 2)
+        self.f_mobile1 = tk.Entry(pat, width=18)
+        self.f_mobile1.grid(row=5, column=0, padx=5, pady=2, sticky="w")
 
-        self.f_mobile2 = tk.Entry(form_lf, width=14)
-        self.f_mobile2.grid(row=5, column=2, padx=4, pady=2, sticky="w")
+        self.f_mobile2 = tk.Entry(pat, width=18)
+        self.f_mobile2.grid(row=5, column=1, padx=5, pady=2, sticky="w")
 
-        self.f_email = tk.Entry(form_lf, width=18)
-        self.f_email.grid(row=6, column=1, columnspan=2, padx=4, pady=2, sticky="we")
-
-        # tk.Label(form_lf, text="Notes:", font=("Arial", 8)).grid(row=7, column=0, padx=4, pady=2, sticky="e")
-        # self.f_notes = tk.Text(form_lf, height=3, width=24)
-        # self.f_notes.grid(row=7, column=1, columnspan=2, padx=4, pady=2, sticky="we")
+        # Row 5: Email
+        self.f_email = tk.Entry(pat, width=38)
+        self.f_email.grid(row=6, column=0, columnspan=2, padx=5, pady=2, sticky="we")
 
         # ── Action Buttons ────────────────────────────
         btn_frame = tk.Frame(left_frame)
         btn_frame.pack(fill="x", padx=6, pady=4)
 
         btn_cfg = dict(font=("Arial", 9, "bold"), width=9, relief="raised", bd=2)
-        tk.Button(btn_frame, text="UPDATE", bg="#8E44AD", fg="white", command=self._form_update, **btn_cfg).grid(row=0, column=1, padx=3, pady=3)
-        tk.Button(btn_frame, text="DELETE", bg="#C0392B", fg="white", command=self._form_delete, **btn_cfg).grid(row=0, column=2, padx=3, pady=3)
-        tk.Button(btn_frame, text="CLOSE",  bg="#7F8C8D", fg="white", command=self.close,        **btn_cfg).grid(row=0, column=3, padx=3, pady=3)
+        tk.Button(btn_frame, text="REGISTER",   bg="#27AE60", fg="white", command=self._open_registration, **btn_cfg).grid(row=0, column=0, padx=2, pady=3)
+        tk.Button(btn_frame, text="UPDATE", bg="#8E44AD", fg="white", command=self._form_update, **btn_cfg).grid(row=0, column=1, padx=2, pady=3)
+        tk.Button(btn_frame, text="DELETE", bg="#C0392B", fg="white", command=self._form_delete, **btn_cfg).grid(row=0, column=2, padx=2, pady=3)
+        tk.Button(btn_frame, text="CLOSE",  bg="#7F8C8D", fg="white", command=self.close,        **btn_cfg).grid(row=0, column=3, padx=2, pady=3)
 
         # ── Search / Filter Panel ─────────────────────
         find_lf = tk.LabelFrame(
@@ -154,6 +154,7 @@ class Patient_Details:
         tree_frame.columnconfigure(0, weight=1)
 
         self.patient_table.bind("<<TreeviewSelect>>", self._on_table_select)
+        self.patient_table.bind("<Double-1>", self._on_table_double_click)
         self.f_patientid.bind("<Return>", self._search_by_id)
         self.f_regno.bind("<Return>", self._search_by_id)
 
@@ -192,7 +193,8 @@ class Patient_Details:
 
         for r in rows:
             pid   = r[0]
-            reg   = f"REG-{pid:04d}"
+            formatted_pid = self.format_patient_id(str(pid))
+            reg   = self.format_reg_no(str(pid))
             name  = r[1] or ""
             age   = r[2] or ""
             gen   = r[3] or ""
@@ -202,7 +204,7 @@ class Patient_Details:
             mob2  = r[7] or ""
             email = r[8] or ""
             self.patient_table.insert("", "end",
-                values=(pid, reg, name, age, gen, ad1, ad2, mob1, mob2, email))
+                values=(formatted_pid, reg, name, age, gen, ad1, ad2, mob1, mob2, email))
 
     # ── Populate form from a DB row ───────────────
     def _populate_form(self, row):
@@ -217,8 +219,10 @@ class Patient_Details:
                 widget.insert(0, str(val))
 
         pid = row[0]
-        _set(self.f_patientid, str(pid))
-        _set(self.f_regno, f"REG-{pid:04d}")
+        formatted_pid = self.format_patient_id(str(pid))
+        formatted_regno = self.format_reg_no(str(pid))
+        _set(self.f_patientid, formatted_pid)
+        _set(self.f_regno, formatted_regno)
         _set(self.f_patientname, row[1])
         _set(self.f_age, row[2])
         self.f_gender.set(row[3] if row[3] else "")
@@ -227,7 +231,8 @@ class Patient_Details:
         _set(self.f_mobile1, row[7])
         _set(self.f_mobile2, row[8])
         _set(self.f_email,   row[11] if len(row) > 11 else "")
-        _set(self.f_notes,   row[12] if len(row) > 12 else "")
+        if hasattr(self, 'f_notes') and self.f_notes:
+            _set(self.f_notes, row[12] if len(row) > 12 else "")
 
     # ── Table row click ───────────────────────────
     def _on_table_select(self, event=None):
@@ -249,6 +254,114 @@ class Patient_Details:
         except Exception as e:
             messagebox.showerror("DB Error", str(e))
 
+    def _on_table_double_click(self, event=None):
+        selected = self.patient_table.focus()
+        if not selected:
+            return
+        values = self.patient_table.item(selected)["values"]
+        if not values:
+            return
+        patient_id = values[0]
+        if hasattr(self.app, 'registration'):
+            self.app.registration(patient_id)
+
+    def _open_registration(self):
+        pid_str = self.f_patientid.get().strip()
+        if not pid_str:
+            selected = self.patient_table.focus()
+            if selected:
+                values = self.patient_table.item(selected)["values"]
+                if values:
+                    pid_str = str(values[0])
+        if pid_str:
+            if hasattr(self.app, 'registration'):
+                self.app.registration(pid_str)
+        else:
+            if hasattr(self.app, 'registration'):
+                self.app.registration()
+
+    def get_patient_id_format_setting(self):
+        try:
+            conn = get_db_connection(self.app)
+            cursor = conn.cursor()
+            cursor.execute("SELECT value FROM Clinic_Settings WHERE key='patient_id_format'")
+            row = cursor.fetchone()
+            conn.close()
+            if row and row[0]:
+                return row[0].strip()
+        except Exception:
+            pass
+        return ""
+
+    def format_patient_id(self, patient_id):
+        if not patient_id:
+            return ""
+        patient_id_str = str(patient_id).strip()
+        parsed_num = self.parse_patient_id(patient_id_str)
+        num_val = int(parsed_num) if parsed_num.isdigit() else 1
+
+        fmt_pattern = self.get_patient_id_format_setting()
+        if not fmt_pattern:
+            return f"{num_val:04d}"
+
+        pattern = fmt_pattern
+
+        match = re.search(r'0+\d*', pattern)
+        if match:
+            counter_token = match.group(0)
+            zero_count = len(counter_token)
+            padded_num = f"{num_val:0{zero_count}d}"
+            pattern = pattern[:match.start()] + padded_num + pattern[match.end():]
+        else:
+            pattern = f"{pattern}-{num_val:03d}"
+
+        now = datetime.now()
+        pattern = pattern.replace("YYYY", now.strftime("%Y"))
+        pattern = pattern.replace("MM", now.strftime("%m"))
+        pattern = pattern.replace("DD", now.strftime("%d"))
+
+        return pattern
+
+    def parse_patient_id(self, patient_id):
+        if not patient_id:
+            return ""
+        pid_str = str(patient_id).strip()
+        if '-' in pid_str or '/' in pid_str:
+            parts = re.split(r'[-/]', pid_str)
+            last_part = parts[-1]
+            digits = ''.join(filter(str.isdigit, last_part))
+            if digits:
+                return str(int(digits))
+        digits = ''.join(filter(str.isdigit, pid_str))
+        return str(int(digits)) if digits else pid_str
+
+    def format_reg_no(self, patient_id):
+        if not patient_id:
+            return ""
+        parsed = self.parse_patient_id(patient_id)
+        if parsed.isdigit():
+            num = int(parsed)
+            return str(num + 3000) if num < 3000 else str(num)
+        return str(patient_id)
+
+    def select_patient_by_id(self, patient_id):
+        if not patient_id:
+            return
+        parsed = self.parse_patient_id(str(patient_id))
+        found = None
+        for child in self.patient_table.get_children():
+            vals = self.patient_table.item(child)["values"]
+            if vals:
+                val_parsed = self.parse_patient_id(str(vals[0]))
+                if val_parsed == parsed:
+                    found = child
+                    break
+        if found:
+            self.patient_table.selection_set(found)
+            self.patient_table.focus(found)
+            self.patient_table.see(found)
+            self._on_table_select()
+
     # ── Search by Patient ID or Reg No ───────────
     def _search_by_id(self, event=None):
         pid_val = self.f_patientid.get().strip()
@@ -258,20 +371,21 @@ class Patient_Details:
             cursor = conn.cursor()
             row = None
             if pid_val:
-                try:
-                    cursor.execute("SELECT * FROM Appointments WHERE id=?", (int(pid_val),))
+                parsed_id = self.parse_patient_id(pid_val)
+                if parsed_id and parsed_id.isdigit():
+                    cursor.execute("SELECT * FROM Appointments WHERE id=?", (int(parsed_id),))
                     row = cursor.fetchone()
-                except ValueError:
-                    pass
             if not row and reg_val:
-                try:
-                    num = int(reg_val.replace("REG-", ""))
-                    cursor.execute("SELECT * FROM Appointments WHERE id=?", (num,))
+                parsed_reg = self.parse_patient_id(reg_val)
+                if parsed_reg and parsed_reg.isdigit():
+                    num = int(parsed_reg)
+                    pid_search = num - 3000 if num > 3000 else num
+                    cursor.execute("SELECT * FROM Appointments WHERE id=? OR id=?", (pid_search, num))
                     row = cursor.fetchone()
-                except ValueError:
+                if not row:
                     cursor.execute(
-                        "SELECT * FROM Appointments WHERE Mobile_Number1=? OR Mobile_Number2=?",
-                        (reg_val, reg_val)
+                        "SELECT * FROM Appointments WHERE Contact=? OR Mobile_Number1=? OR Mobile_Number2=?",
+                        (reg_val, reg_val, reg_val)
                     )
                     row = cursor.fetchone()
             conn.close()

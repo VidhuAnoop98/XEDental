@@ -81,6 +81,8 @@ class Stock_Register:
         cal_lf.pack_propagate(False)
 
 
+        self.cal_target_var = tk.StringVar(value="start")
+
         self.sup_cal = Calendar(cal_lf, selectmode="day",
                                 date_pattern="dd-mm-yyyy", font=("Arial", 10))
         self.sup_cal.pack(fill="both", expand=True, padx=5, pady=5)
@@ -119,8 +121,28 @@ class Stock_Register:
         self.sr_start_date = self.start_date
         self.sr_end_date = self.end_date
 
-        self.start_date.bind("<FocusIn>", lambda e: self.cal_target_var.set("start"))
-        self.end_date.bind("<FocusIn>", lambda e: self.cal_target_var.set("end"))
+        def _on_start_focus(event=None):
+            self.cal_target_var.set("start")
+            val = self.start_date.get().strip()
+            if val:
+                try:
+                    dt_obj = datetime.strptime(val, "%d-%m-%Y")
+                    self.sup_cal.selection_set(dt_obj)
+                except Exception:
+                    pass
+
+        def _on_end_focus(event=None):
+            self.cal_target_var.set("end")
+            val = self.end_date.get().strip()
+            if val:
+                try:
+                    dt_obj = datetime.strptime(val, "%d-%m-%Y")
+                    self.sup_cal.selection_set(dt_obj)
+                except Exception:
+                    pass
+
+        self.start_date.bind("<FocusIn>", _on_start_focus)
+        self.end_date.bind("<FocusIn>", _on_end_focus)
 
         # Ctrl+; → insert today's date
         def _bind_date(entry_widget):
@@ -206,8 +228,8 @@ class Stock_Register:
         btn_delete = tk.Button(btn_frame, text="DELETE", font=('Arial', 10, 'bold'), bg="#dc3545", fg="white", width=10, relief="raised", cursor="hand2", command=self.delete_stock)
         btn_delete.pack(side="left", padx=5)
 
-        btn_clear = tk.Button(btn_frame, text="CLEAR", font=('Arial', 10, 'bold'), bg="#ffc107", fg="black", width=10, relief="raised", cursor="hand2", command=self.clear_stock)
-        btn_clear.pack(side="left", padx=5)
+        btn_refresh = tk.Button(btn_frame, text="REFRESH", font=('Arial', 10, 'bold'), bg="#16A085", fg="white", width=10, relief="raised", cursor="hand2", command=self.refresh_stock)
+        btn_refresh.pack(side="left", padx=5)
 
         btn_close = tk.Button(btn_frame, text="Close", font=('Arial', 10, 'bold'), bg="#6c757d", fg="white", width=10, relief="raised", cursor="hand2", command=self._close_suppliers)
         btn_close.pack(side="left", padx=5)
@@ -414,6 +436,20 @@ class Stock_Register:
             entry.delete(0, tk.END)
         self.balance_var.set("0")
         self.total_var.set("0.00")
+
+    def refresh_stock(self):
+        self.clear_stock()
+        if hasattr(self, 'product_tree'):
+            try:
+                self.product_tree.selection_remove(self.product_tree.selection())
+            except Exception:
+                pass
+        if hasattr(self, 'inv_tree'):
+            try:
+                self.inv_tree.selection_remove(self.inv_tree.selection())
+            except Exception:
+                pass
+        self.load_stock_data()
 
     def on_inv_select(self, event):
         selected = self.inv_tree.selection()

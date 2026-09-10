@@ -13,7 +13,7 @@ import subprocess
 import sys
 
 def convert_pdf_to_docx(pdf_path, docx_path=None):
-    """Converts a generated PDF letterhead/prescription file into an editable MS Word (.docx) document."""
+    """Converts a generated PDF letterhead/prescription file into an editable MS Word (.docx) document quietly without console output."""
     if not docx_path:
         docx_path = os.path.splitext(pdf_path)[0] + ".docx"
 
@@ -31,13 +31,22 @@ def convert_pdf_to_docx(pdf_path, docx_path=None):
             counter += 1
 
     try:
+        import logging
+        import contextlib
+        import warnings
+        warnings.filterwarnings("ignore", category=UserWarning)
+        warnings.filterwarnings("ignore", category=DeprecationWarning)
+
+        logging.getLogger("pdf2docx").setLevel(logging.ERROR)
+
         from pdf2docx import Converter
-        cv = Converter(pdf_path)
-        cv.convert(target_path)
-        cv.close()
+        with open(os.devnull, 'w') as devnull:
+            with contextlib.redirect_stdout(devnull), contextlib.redirect_stderr(devnull):
+                cv = Converter(pdf_path)
+                cv.convert(target_path)
+                cv.close()
         return target_path
-    except Exception as exc:
-        print(f"pdf2docx conversion error: {exc}")
+    except Exception:
         return target_path
 
 def open_file(filepath):
@@ -181,6 +190,33 @@ class Letter:
                 return f"Clinic Hours : {open_time} to {close_time}"
         except Exception:
             return default_hours
+
+    def get_clinic_address_settings(self):
+        default_name = "ANUPAM DENTAL CLINIC"
+        default_addr = "West Gate Vaikom - 686141"
+        try:
+            db_path = getattr(self.app, "db_path", "dental.db")
+            if not os.path.exists(db_path):
+                script_dir = os.path.dirname(os.path.abspath(__file__))
+                db_path = os.path.join(script_dir, "dental.db")
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            cursor.execute("SELECT key, value FROM Clinic_Settings WHERE key IN ('clinic_work_name', 'clinic_name', 'clinic_address_name', 'clinic_pincode', 'clinic_address')")
+            rows = dict(cursor.fetchall())
+            conn.close()
+
+            name = (rows.get("clinic_work_name") or rows.get("clinic_name") or default_name).strip()
+            addr_name = (rows.get("clinic_address_name") or "West Gate Vaikom").strip()
+            pincode = (rows.get("clinic_pincode") or "686141").strip()
+
+            if pincode and pincode not in addr_name:
+                addr = f"{addr_name} - {pincode}"
+            else:
+                addr = addr_name if addr_name else default_addr
+
+            return name, addr
+        except Exception:
+            return default_name, default_addr
     
 
     def Letter_Pad(self):
@@ -204,8 +240,7 @@ class Letter:
         # ── Paths & clinic data ──────────────────────────────────────────
         SCRIPT_DIR     = os.path.dirname(os.path.abspath(__file__))
         LOGO_PATH      = os.path.join(SCRIPT_DIR, "Dental_logo.png")
-        CLINIC_NAME    = "ANUPAM DENTAL CLINIC"
-        CLINIC_ADDRESS = "West Gate Vaikom - 686141"
+        CLINIC_NAME, CLINIC_ADDRESS = self.get_clinic_address_settings()
         CLINIC_PHONE, CLINIC_RESI = self.get_clinic_phone_settings()
         CLINIC_HOURS   = self.get_clinic_hours_setting()
 
@@ -371,22 +406,37 @@ class Letter:
                 draw_page_preview(state["current_page"])
 
         def on_mouse_wheel(event):
-            if getattr(event, "state", 0) & 1:  # Shift pressed -> Horizontal scroll
-                if getattr(event, "delta", 0) > 0 or getattr(event, "num", 0) == 4:
-                    cv.xview_scroll(-1, "units")
-                else:
-                    cv.xview_scroll(1, "units")
-            else:
-                if getattr(event, "delta", 0) > 0 or getattr(event, "num", 0) == 4:
+            state_val = getattr(event, "state", 0)
+            is_up = getattr(event, "delta", 0) > 0 or getattr(event, "num", 0) == 4
+            is_ctrl = bool(state_val & 4 or state_val & 0x0004 or state_val & 0x20000)
+            is_shift = bool(state_val & 1 or state_val & 0x0001)
+
+            if is_ctrl:
+                if is_up:
                     zoom_in()
                 else:
                     zoom_out()
+            elif is_shift:
+                if is_up:
+                    cv.xview_scroll(-2, "units")
+                else:
+                    cv.xview_scroll(2, "units")
+            else:
+                if is_up:
+                    cv.yview_scroll(-2, "units")
+                else:
+                    cv.yview_scroll(2, "units")
             return "break"
 
         cv.bind("<MouseWheel>", on_mouse_wheel)
+        cv.bind("<Control-MouseWheel>", on_mouse_wheel)
         cv.bind("<Shift-MouseWheel>", on_mouse_wheel)
         cv.bind("<Button-4>", on_mouse_wheel)
         cv.bind("<Button-5>", on_mouse_wheel)
+        cv.bind("<Control-Button-4>", on_mouse_wheel)
+        cv.bind("<Control-Button-5>", on_mouse_wheel)
+        cv.bind("<Shift-Button-4>", on_mouse_wheel)
+        cv.bind("<Shift-Button-5>", on_mouse_wheel)
 
         btn_zoom_out = tk.Button(ctrl_frame, text="-", font=("Arial", 9, "bold"), command=zoom_out)
         btn_zoom_out.pack(side="left", padx=5)
@@ -711,8 +761,7 @@ class Letter:
         # ----------------------------------------------------------------------
         # Editable clinic data - change these to update the letterhead content
         # ----------------------------------------------------------------------
-        CLINIC_NAME = "ANUPAM DENTAL CLINIC"
-        CLINIC_ADDRESS = "West Gate Vaikom - 686141"
+        CLINIC_NAME, CLINIC_ADDRESS = self.get_clinic_address_settings()
         CLINIC_PHONE, CLINIC_RESI = self.get_clinic_phone_settings()
         CLINIC_HOURS = self.get_clinic_hours_setting()
          
@@ -928,22 +977,37 @@ class Letter:
                 draw_page_preview(state["current_page"])
 
         def on_mouse_wheel(event):
-            if getattr(event, "state", 0) & 1:  # Shift pressed -> Horizontal scroll
-                if getattr(event, "delta", 0) > 0 or getattr(event, "num", 0) == 4:
-                    cv.xview_scroll(-1, "units")
-                else:
-                    cv.xview_scroll(1, "units")
-            else:
-                if getattr(event, "delta", 0) > 0 or getattr(event, "num", 0) == 4:
+            state_val = getattr(event, "state", 0)
+            is_up = getattr(event, "delta", 0) > 0 or getattr(event, "num", 0) == 4
+            is_ctrl = bool(state_val & 4 or state_val & 0x0004 or state_val & 0x20000)
+            is_shift = bool(state_val & 1 or state_val & 0x0001)
+
+            if is_ctrl:
+                if is_up:
                     zoom_in()
                 else:
                     zoom_out()
+            elif is_shift:
+                if is_up:
+                    cv.xview_scroll(-2, "units")
+                else:
+                    cv.xview_scroll(2, "units")
+            else:
+                if is_up:
+                    cv.yview_scroll(-2, "units")
+                else:
+                    cv.yview_scroll(2, "units")
             return "break"
 
         cv.bind("<MouseWheel>", on_mouse_wheel)
+        cv.bind("<Control-MouseWheel>", on_mouse_wheel)
         cv.bind("<Shift-MouseWheel>", on_mouse_wheel)
         cv.bind("<Button-4>", on_mouse_wheel)
         cv.bind("<Button-5>", on_mouse_wheel)
+        cv.bind("<Control-Button-4>", on_mouse_wheel)
+        cv.bind("<Control-Button-5>", on_mouse_wheel)
+        cv.bind("<Shift-Button-4>", on_mouse_wheel)
+        cv.bind("<Shift-Button-5>", on_mouse_wheel)
 
         btn_zoom_out = tk.Button(ctrl_frame, text="-", font=("Arial", 9, "bold"), command=zoom_out)
         btn_zoom_out.pack(side="left", padx=5)
@@ -1136,8 +1200,7 @@ class Letter:
         A4_W, A4_H = A4
         PAGE_W, PAGE_H = A4_H / 2, A4_W
         LOGO_PATH = os.path.join(SCRIPT_DIR, "Dental_logo.png")
-        CLINIC_NAME = "ANUPAM DENTAL CLINIC"
-        CLINIC_ADDRESS = "West Gate Vaikom - 686141"
+        CLINIC_NAME, CLINIC_ADDRESS = self.get_clinic_address_settings()
         CLINIC_PHONE, CLINIC_RESI = self.get_clinic_phone_settings()
         db_consultants, db_visiting = self.get_doctors_from_db()
         CONSULTANTS = list(db_consultants)
@@ -1257,8 +1320,7 @@ class Letter:
         # ── Paths & clinic data ──────────────────────────────────────────
         SCRIPT_DIR     = os.path.dirname(os.path.abspath(__file__))
         LOGO_PATH      = os.path.join(SCRIPT_DIR, "Dental_logo.png")
-        CLINIC_NAME    = "ANUPAM DENTAL CLINIC"
-        CLINIC_ADDRESS = "West Gate Vaikom - 686141"
+        CLINIC_NAME, CLINIC_ADDRESS = self.get_clinic_address_settings()
         CLINIC_PHONE, CLINIC_RESI = self.get_clinic_phone_settings()
         CLINIC_HOURS   = self.get_clinic_hours_setting()
 
@@ -1327,7 +1389,7 @@ class Letter:
         # ----------------------------------------------------------------------
         def draw_appointments(c: canvas.Canvas, top_line_y: float, doctor_name: str, appointments: list):
             """Draws the 'Appointments' title, the Doctor field, and the
-            Time/PName/Purpose/Duration table below the header rule."""
+            Time/Patient Name/Purpose/Duration table below the header rule."""
             INK = HexColor("#1a1a1a") if HexColor else None
             if INK:
                 c.setFillColor(INK)
@@ -1350,7 +1412,9 @@ class Letter:
             c.drawString(left_margin, y + 1.5 * mm, "Doctor :")
 
             box_x0 = left_margin + 20 * mm
-            box_x1 = left_margin + 95 * mm
+            doc_str_w = c.stringWidth(doctor_name, "Helvetica", 9.5) if hasattr(c, "stringWidth") else 70 * mm
+            box_w = max(75 * mm, doc_str_w + 6 * mm)
+            box_x1 = box_x0 + box_w
             box_h = 6 * mm
             c.setLineWidth(0.6)
             c.rect(box_x0, y - 1 * mm, box_x1 - box_x0, box_h, stroke=1, fill=0)
@@ -1363,7 +1427,7 @@ class Letter:
             col_purpose = (col_name[1], col_name[1] + 78 * mm)
             col_duration = (col_purpose[1], right_margin)
             cols = [col_time, col_name, col_purpose, col_duration]
-            headers = ["Time", "PName", "Purpose", "Duration"]
+            headers = ["Time", "Patient Name", "Purpose", "Duration"]
 
             table_top = y - 8 * mm
             header_h = 7 * mm
@@ -1422,15 +1486,17 @@ class Letter:
             cursor.execute("SELECT Time, Patient_Name, Notes FROM Appointments WHERE Date = ? ORDER BY Time", (today_str,))
             rows = cursor.fetchall()
             
-            # Fetch doctor
-            cursor.execute("SELECT First_Name, Last_Name, Qualification FROM Doctors LIMIT 1")
-            doc_row = cursor.fetchone()
+            # Fetch doctor from Doctors_Details (Doctors table)
+            doc_name = selected_doctor_var.get().strip() if ('selected_doctor_var' in locals() or 'selected_doctor_var' in vars() or 'selected_doctor_var' in globals()) and selected_doctor_var.get().strip() else ""
+            if not doc_name:
+                cursor.execute("SELECT First_Name, Last_Name, Qualification FROM Doctors ORDER BY id LIMIT 1")
+                doc_row = cursor.fetchone()
+                if doc_row:
+                    fn, ln, qual = doc_row[0] or "", doc_row[1] or "", doc_row[2] or ""
+                    doc_name = f"Dr. {fn} {ln} {qual}".strip()
+                else:
+                    doc_name = "Dr. ANOOP KUMAR. B D S"
             conn.close()
-            
-            if doc_row:
-                doc_name = f"Dr. {doc_row[0]} {doc_row[1]} {doc_row[2]}".strip()
-            else:
-                doc_name = "Dr. ANOOP KUMAR. B D S"
                 
             appointments_list = [(r[0] if r[0] else "", r[1] if r[1] else "", r[2] if r[2] else "", "") for r in rows]
             
@@ -1499,15 +1565,37 @@ class Letter:
                 draw_page_preview(state["current_page"])
 
         def on_mouse_wheel(event):
-            if getattr(event, "delta", 0) > 0 or getattr(event, "num", 0) == 4:
-                zoom_in()
+            state_val = getattr(event, "state", 0)
+            is_up = getattr(event, "delta", 0) > 0 or getattr(event, "num", 0) == 4
+            is_ctrl = bool(state_val & 4 or state_val & 0x0004 or state_val & 0x20000)
+            is_shift = bool(state_val & 1 or state_val & 0x0001)
+
+            if is_ctrl:
+                if is_up:
+                    zoom_in()
+                else:
+                    zoom_out()
+            elif is_shift:
+                if is_up:
+                    cv.xview_scroll(-2, "units")
+                else:
+                    cv.xview_scroll(2, "units")
             else:
-                zoom_out()
+                if is_up:
+                    cv.yview_scroll(-2, "units")
+                else:
+                    cv.yview_scroll(2, "units")
             return "break"
 
         cv.bind("<MouseWheel>", on_mouse_wheel)
+        cv.bind("<Control-MouseWheel>", on_mouse_wheel)
+        cv.bind("<Shift-MouseWheel>", on_mouse_wheel)
         cv.bind("<Button-4>", on_mouse_wheel)
         cv.bind("<Button-5>", on_mouse_wheel)
+        cv.bind("<Control-Button-4>", on_mouse_wheel)
+        cv.bind("<Control-Button-5>", on_mouse_wheel)
+        cv.bind("<Shift-Button-4>", on_mouse_wheel)
+        cv.bind("<Shift-Button-5>", on_mouse_wheel)
 
         btn_zoom_out = tk.Button(ctrl_frame, text="-", font=("Arial", 9, "bold"), command=zoom_out)
         btn_zoom_out.pack(side="left", padx=5)
@@ -1518,8 +1606,34 @@ class Letter:
         btn_zoom_in = tk.Button(ctrl_frame, text="+", font=("Arial", 9, "bold"), command=zoom_in)
         btn_zoom_in.pack(side="left", padx=5)
 
-        btn_reg = tk.Button(ctrl_frame, text="Open Registration Workspace", font=("Arial", 9, "bold"), bg="#4CAF50", fg="white", command=lambda: self.app.registration())
-        btn_reg.pack(side="right", padx=10)
+        tk.Label(ctrl_frame, text="Doctor:", font=("Arial", 9, "bold")).pack(side="left", padx=(15, 2))
+
+        def get_all_doctor_names():
+            docs = []
+            try:
+                conn = sqlite3.connect("dental.db")
+                cursor = conn.cursor()
+                cursor.execute("SELECT First_Name, Last_Name, Qualification FROM Doctors ORDER BY First_Name, Last_Name")
+                for fn, ln, qual in cursor.fetchall():
+                    name = f"Dr. {fn or ''} {ln or ''} {qual or ''}".strip()
+                    if name != "Dr.":
+                        docs.append(name)
+                conn.close()
+            except Exception:
+                pass
+            if not docs:
+                docs = ["Dr. ANOOP KUMAR. B D S"]
+            return docs
+
+        doctor_names_list = get_all_doctor_names()
+        selected_doctor_var = tk.StringVar(value=doctor_names_list[0] if doctor_names_list else "")
+
+        def on_doctor_changed(event=None):
+            draw_page_preview(state["current_page"])
+
+        doc_combo = ttk.Combobox(ctrl_frame, textvariable=selected_doctor_var, values=doctor_names_list, width=25, font=("Arial", 9), state="readonly")
+        doc_combo.pack(side="left", padx=5)
+        doc_combo.bind("<<ComboboxSelected>>", on_doctor_changed)
 
         def draw_page_preview(page_idx):
             state["current_page"] = page_idx
@@ -1589,15 +1703,17 @@ class Letter:
             cursor.execute("SELECT Time, Patient_Name, Notes FROM Appointments WHERE Date = ? ORDER BY Time", (today_str,))
             rows = cursor.fetchall()
             
-            # Fetch doctor
-            cursor.execute("SELECT First_Name, Last_Name, Qualification FROM Doctors LIMIT 1")
-            doc_row = cursor.fetchone()
+            # Fetch doctor from selected dropdown or Doctors_Details (Doctors table)
+            doctor_name = selected_doctor_var.get().strip() if selected_doctor_var.get().strip() else ""
+            if not doctor_name:
+                cursor.execute("SELECT First_Name, Last_Name, Qualification FROM Doctors ORDER BY id LIMIT 1")
+                doc_row = cursor.fetchone()
+                if doc_row:
+                    fn, ln, qual = doc_row[0] or "", doc_row[1] or "", doc_row[2] or ""
+                    doctor_name = f"Dr. {fn} {ln} {qual}".strip()
+                else:
+                    doctor_name = "Dr. ANOOP KUMAR. B D S"
             conn.close()
-            
-            if doc_row:
-                doctor_name = f"Dr. {doc_row[0]} {doc_row[1]} {doc_row[2]}".strip()
-            else:
-                doctor_name = "Dr. ANOOP KUMAR. B D S"
                 
             appointments_list = [(r[0] if r[0] else "", r[1] if r[1] else "", r[2] if r[2] else "", "") for r in rows]
             
@@ -1609,14 +1725,17 @@ class Letter:
             cv.create_text(pcx(), ppy(y), text="Appointments", font=("Arial", max(10, smm(4)), "bold"), fill="#1a1a1a")
             
             y -= 10 * mm
-            cv.create_text(ppx(left_margin), ppy(y + 1.5 * mm), text="Doctor :", font=("Arial", max(8, smm(3)), "bold"), fill="#1a1a1a", anchor="nw")
-            
-            box_x0 = ppx(left_margin + 20 * mm)
-            box_x1 = ppx(left_margin + 95 * mm)
             box_y0 = ppy(y + 5 * mm)
             box_y1 = ppy(y - 1 * mm)
+            box_mid_y = (box_y0 + box_y1) / 2
+            
+            cv.create_text(ppx(left_margin), box_mid_y, text="Doctor :", font=("Arial", max(8, smm(3)), "bold"), fill="#1a1a1a", anchor="w")
+            
+            doc_w_mm = max(75, len(doctor_name) * 2.2 + 6)
+            box_x0 = ppx(left_margin + 20 * mm)
+            box_x1 = ppx(left_margin + (20 + doc_w_mm) * mm)
             cv.create_rectangle(box_x0, box_y0, box_x1, box_y1, outline="#555", width=1)
-            cv.create_text(box_x0 + smm(2), ppy(y + 1 * mm), text=doctor_name, font=("Arial", max(8, smm(3))), fill="#1a1a1a", anchor="nw")
+            cv.create_text(box_x0 + smm(2), box_mid_y, text=doctor_name, font=("Arial", max(8, smm(3))), fill="#1a1a1a", anchor="w")
             
             # Table boundaries
             col_time_x0 = ppx(left_margin)
@@ -1630,29 +1749,36 @@ class Letter:
             row_h = 7 * mm
             
             # Draw header row
-            cv.create_rectangle(col_time_x0, ppy(table_top), col_duration_x1, ppy(table_top - header_h), outline="#555", width=1)
-            cv.create_line(col_time_x1, ppy(table_top), col_time_x1, ppy(table_top - header_h), fill="#555", width=1)
-            cv.create_line(col_name_x1, ppy(table_top), col_name_x1, ppy(table_top - header_h), fill="#555", width=1)
-            cv.create_line(col_purpose_x1, ppy(table_top), col_purpose_x1, ppy(table_top - header_h), fill="#555", width=1)
+            hdr_y0 = ppy(table_top)
+            hdr_y1 = ppy(table_top - header_h)
+            hdr_mid_y = (hdr_y0 + hdr_y1) / 2
             
-            cv.create_text(col_time_x0 + smm(2), ppy(table_top - header_h + 2 * mm), text="Time", font=("Arial", max(8, smm(3)), "bold"), fill="#1a1a1a", anchor="nw")
-            cv.create_text(col_time_x1 + smm(2), ppy(table_top - header_h + 2 * mm), text="PName", font=("Arial", max(8, smm(3)), "bold"), fill="#1a1a1a", anchor="nw")
-            cv.create_text(col_name_x1 + smm(2), ppy(table_top - header_h + 2 * mm), text="Purpose", font=("Arial", max(8, smm(3)), "bold"), fill="#1a1a1a", anchor="nw")
-            cv.create_text(col_purpose_x1 + smm(2), ppy(table_top - header_h + 2 * mm), text="Duration", font=("Arial", max(8, smm(3)), "bold"), fill="#1a1a1a", anchor="nw")
+            cv.create_rectangle(col_time_x0, hdr_y0, col_duration_x1, hdr_y1, outline="#555", width=1)
+            cv.create_line(col_time_x1, hdr_y0, col_time_x1, hdr_y1, fill="#555", width=1)
+            cv.create_line(col_name_x1, hdr_y0, col_name_x1, hdr_y1, fill="#555", width=1)
+            cv.create_line(col_purpose_x1, hdr_y0, col_purpose_x1, hdr_y1, fill="#555", width=1)
+            
+            cv.create_text(col_time_x0 + smm(2), hdr_mid_y, text="Time", font=("Arial", max(8, smm(3)), "bold"), fill="#1a1a1a", anchor="w")
+            cv.create_text(col_time_x1 + smm(2), hdr_mid_y, text="Patient Name", font=("Arial", max(8, smm(3)), "bold"), fill="#1a1a1a", anchor="w")
+            cv.create_text(col_name_x1 + smm(2), hdr_mid_y, text="Purpose", font=("Arial", max(8, smm(3)), "bold"), fill="#1a1a1a", anchor="w")
+            cv.create_text(col_purpose_x1 + smm(2), hdr_mid_y, text="Duration", font=("Arial", max(8, smm(3)), "bold"), fill="#1a1a1a", anchor="w")
             
             # Draw rows
             row_y = table_top - header_h
             for time_s, name_s, purpose_s, duration_s in appointments_list:
-                cv.create_rectangle(col_time_x0, ppy(row_y), col_duration_x1, ppy(row_y - row_h), outline="#555", width=1)
-                cv.create_line(col_time_x1, ppy(row_y), col_time_x1, ppy(row_y - row_h), fill="#555", width=1)
-                cv.create_line(col_name_x1, ppy(row_y), col_name_x1, ppy(row_y - row_h), fill="#555", width=1)
-                cv.create_line(col_purpose_x1, ppy(row_y), col_purpose_x1, ppy(row_y - row_h), fill="#555", width=1)
+                r_y0 = ppy(row_y)
+                r_y1 = ppy(row_y - row_h)
+                r_mid_y = (r_y0 + r_y1) / 2
                 
-                text_y = row_y - row_h + 2 * mm
-                cv.create_text(col_time_x0 + smm(2), ppy(text_y), text=time_s, font=("Arial", max(7, smm(2.7))), fill="#1a1a1a", anchor="nw")
-                cv.create_text(col_time_x1 + smm(2), ppy(text_y), text=name_s, font=("Arial", max(7, smm(2.7))), fill="#1a1a1a", anchor="nw")
-                cv.create_text(col_name_x1 + smm(2), ppy(text_y), text=purpose_s, font=("Arial", max(7, smm(2.7))), fill="#1a1a1a", anchor="nw")
-                cv.create_text(col_duration_x1 - smm(2), ppy(text_y), text=duration_s, font=("Arial", max(7, smm(2.7))), fill="#1a1a1a", anchor="ne")
+                cv.create_rectangle(col_time_x0, r_y0, col_duration_x1, r_y1, outline="#555", width=1)
+                cv.create_line(col_time_x1, r_y0, col_time_x1, r_y1, fill="#555", width=1)
+                cv.create_line(col_name_x1, r_y0, col_name_x1, r_y1, fill="#555", width=1)
+                cv.create_line(col_purpose_x1, r_y0, col_purpose_x1, r_y1, fill="#555", width=1)
+                
+                cv.create_text(col_time_x0 + smm(2), r_mid_y, text=time_s, font=("Arial", max(7, smm(2.7))), fill="#1a1a1a", anchor="w")
+                cv.create_text(col_time_x1 + smm(2), r_mid_y, text=name_s, font=("Arial", max(7, smm(2.7))), fill="#1a1a1a", anchor="w")
+                cv.create_text(col_name_x1 + smm(2), r_mid_y, text=purpose_s, font=("Arial", max(7, smm(2.7))), fill="#1a1a1a", anchor="w")
+                cv.create_text(col_duration_x1 - smm(2), r_mid_y, text=duration_s, font=("Arial", max(7, smm(2.7))), fill="#1a1a1a", anchor="e")
                 row_y -= row_h
                 
             # Footer

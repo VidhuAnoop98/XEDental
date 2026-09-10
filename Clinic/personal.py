@@ -32,6 +32,7 @@ class Personal:
             ("Plain Prescription",self.Plain_Priscription),
             ("ID Card",self.select_card),
             ("Change Telephone",self.Change_Telephone),
+            ("Change Address",self.Change_Address),
             ("Fees Details",self.Fees_Details),
             ("Add New Lab",self.Add_New_Lab),
             ("Shade Details",self.Shade_Details),
@@ -44,10 +45,15 @@ class Personal:
             ("Clinic Timing",self.Clinic_Timing)
         ]
 
-        y_offset = 100
+        y_start = 80
+        items_per_col = (len(col1_buttons) + 1) // 2
         for i, (text, command) in enumerate(col1_buttons):
-            btn = tk.Button(workspace, text=text, font=('Arial', 11), width=20, command=command)
-            btn.place(x=200, y=y_offset + i * 35)
+            col = i // items_per_col
+            row = i % items_per_col
+            x_pos = 120 + col * 240
+            y_pos = y_start + row * 40
+            btn = tk.Button(workspace, text=text, font=('Arial', 11), width=22, command=command)
+            btn.place(x=x_pos, y=y_pos)
 
     def get_db_connection(self):
         if hasattr(self.app, "get_db_connection"):
@@ -300,15 +306,15 @@ class Personal:
         btn_frame = tk.Frame(self.app.workspace)
         btn_frame.pack(pady=6)
 
-        tk.Button(btn_frame, text="Add",    font=('Arial', 10), width=10,
+        tk.Button(btn_frame, text="Add",     font=('Arial', 10, 'bold'), width=10, bg="#4CAF50", fg="white",
                   command=self._add_doctor).grid(row=0, column=0, padx=6)
-        tk.Button(btn_frame, text="Update", font=('Arial', 10), width=10,
+        tk.Button(btn_frame, text="Update",  font=('Arial', 10, 'bold'), width=10, bg="#2196F3", fg="white",
                   command=self._update_doctor).grid(row=0, column=1, padx=6)
-        tk.Button(btn_frame, text="Delete", font=('Arial', 10), width=10, fg="red",
-                  command=self._delete_doctor).grid(row=0, column=2, padx=6)
-        tk.Button(btn_frame, text="Clear",  font=('Arial', 10), width=10,
-                  command=self._clear_doctor_form).grid(row=0, column=3, padx=6)
-        tk.Button(btn_frame, text="Close",  font=('Arial', 10), width=10,
+        tk.Button(btn_frame, text="Refresh", font=('Arial', 10, 'bold'), width=10, bg="#17a2b8", fg="white",
+                  command=self._refresh_doctor).grid(row=0, column=2, padx=6)
+        tk.Button(btn_frame, text="Delete",  font=('Arial', 10, 'bold'), width=10, bg="#f44336", fg="white",
+                  command=self._delete_doctor).grid(row=0, column=3, padx=6)
+        tk.Button(btn_frame, text="Close",   font=('Arial', 10, 'bold'), width=10, bg="#6c757d", fg="white",
                   command=self.close).grid(row=0, column=4, padx=6)
 
         self._selected_doctor_id = None
@@ -391,6 +397,10 @@ class Personal:
             conn.close()
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load doctors: {e}")
+
+    def _refresh_doctor(self):
+        self._clear_doctor_form()
+        self._load_doctors()
 
     def _add_doctor(self):
         vals = self._doctor_form_values()
@@ -530,6 +540,116 @@ class Personal:
             win.destroy()
         except Exception as e:
             messagebox.showerror("Error", f"Failed to update telephone numbers: {e}")
+
+    def Change_Address(self):
+        win = tk.Toplevel(self.app.root)
+        win.title("Change Address")
+        height = 340
+        width = 480
+        x = (win.winfo_screenwidth() - width) // 2
+        y = (win.winfo_screenheight() - height) // 2
+        win.geometry(f"{width}x{height}+{x}+{y}") 
+        win.resizable(False, False)
+        
+        form_frame = tk.Frame(win)
+        form_frame.pack(fill="x", padx=15, pady=10)
+
+        lbl1 = tk.Label(form_frame, text="Work Name", font=("Arial", 10, "bold"), fg="#2C3E50")
+        lbl1.grid(row=0, column=0, pady=5, padx=5, sticky="e")
+        txt1 = tk.Entry(form_frame, width=30, font=("Arial", 10))
+        txt1.grid(row=0, column=1, pady=5, padx=5, sticky="w")
+        txt1.insert(0, self._get_clinic_setting("clinic_work_name", "ANUPAM DENTAL CLINIC"))
+
+        lbl2 = tk.Label(form_frame, text="Address Name", font=("Arial", 10, "bold"), fg="#2C3E50")
+        lbl2.grid(row=1, column=0, pady=5, padx=5, sticky="e")
+        txt2 = tk.Entry(form_frame, width=30, font=("Arial", 10))
+        txt2.grid(row=1, column=1, pady=5, padx=5, sticky="w")
+        txt2.insert(0, self._get_clinic_setting("clinic_address_name", "West Gate Vaikom"))
+
+        lbl3 = tk.Label(form_frame, text="Pincode", font=("Arial", 10, "bold"), fg="#2C3E50")
+        lbl3.grid(row=2, column=0, pady=5, padx=5, sticky="e")
+        txt3 = tk.Entry(form_frame, width=30, font=("Arial", 10))
+        txt3.grid(row=2, column=1, pady=5, padx=5, sticky="w")
+        txt3.insert(0, self._get_clinic_setting("clinic_pincode", "686141"))
+
+        # Logo Upload Section
+        lbl4 = tk.Label(form_frame, text="Clinic Logo", font=("Arial", 10, "bold"), fg="#2C3E50")
+        lbl4.grid(row=3, column=0, pady=5, padx=5, sticky="ne")
+
+        logo_frame = tk.Frame(form_frame)
+        logo_frame.grid(row=3, column=1, pady=5, padx=5, sticky="w")
+
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        default_logo = os.path.join(script_dir, "Dental_logo.png")
+        saved_logo = self._get_clinic_setting("clinic_logo_path", default_logo)
+        logo_var = tk.StringVar(value=saved_logo if os.path.isfile(saved_logo) else default_logo)
+
+        logo_img_label = tk.Label(logo_frame, bd=1, relief="solid")
+        logo_img_label.pack(side="left", padx=(0, 10))
+
+        def update_logo_preview(path):
+            if path and os.path.isfile(path):
+                try:
+                    from PIL import Image as _PI, ImageTk as _ITk
+                    _img = _PI.open(path)
+                    _img.thumbnail((60, 60))
+                    self._logo_preview_img = _ITk.PhotoImage(_img)
+                    logo_img_label.config(image=self._logo_preview_img, text="")
+                    return
+                except Exception:
+                    pass
+            logo_img_label.config(image="", text="[No Logo]", font=("Arial", 9))
+
+        update_logo_preview(logo_var.get())
+
+        def choose_logo():
+            file_path = filedialog.askopenfilename(
+                title="Select Logo Photo / Image for Dental_logo.png",
+                filetypes=[("Image Files", "*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.webp"), ("All Files", "*.*")]
+            )
+            if file_path:
+                logo_var.set(file_path)
+                update_logo_preview(file_path)
+
+        btn_upload = tk.Button(logo_frame, text="📁 Upload", font=("Arial", 9, "bold"),
+                               bg="#009688", fg="white", command=choose_logo)
+        btn_upload.pack(side="left", anchor="center")
+
+        btn_frame = tk.Frame(win)
+        btn_frame.pack(pady=10)
+        btn1 = tk.Button(btn_frame, text="Update", font=("Arial", 10, "bold"), bg="#27AE60", fg="white", width=10, 
+                         command=lambda: self._update_address(txt1.get().strip(), txt2.get().strip(), txt3.get().strip(), logo_var.get().strip(), win))
+        btn1.grid(row=0, column=0, padx=8)
+        btn2 = tk.Button(btn_frame, text="Close", font=("Arial", 10, "bold"), bg="#6c757d", fg="white", width=10, command=win.destroy)
+        btn2.grid(row=0, column=1, padx=8)
+
+    def _update_address(self, work_name, address_name, pincode, logo_path, win):
+        try:
+            self._set_clinic_setting("clinic_work_name", work_name)
+            self._set_clinic_setting("clinic_name", work_name)
+            self._set_clinic_setting("clinic_address_name", address_name)
+            self._set_clinic_setting("clinic_pincode", pincode)
+            if pincode and pincode not in address_name:
+                self._set_clinic_setting("clinic_address", f"{address_name} - {pincode}")
+            else:
+                self._set_clinic_setting("clinic_address", address_name if address_name else "West Gate Vaikom - 686141")
+
+            if logo_path and os.path.isfile(logo_path):
+                script_dir = os.path.dirname(os.path.abspath(__file__))
+                dest_logo = os.path.join(script_dir, "Dental_logo.png")
+                try:
+                    from PIL import Image
+                    im = Image.open(logo_path)
+                    im.convert("RGBA").save(dest_logo, "PNG")
+                except Exception:
+                    import shutil
+                    shutil.copy2(logo_path, dest_logo)
+                self._set_clinic_setting("clinic_logo_path", dest_logo)
+
+            messagebox.showinfo("Success", "Work, Address & Logo updated successfully.")
+            win.destroy()
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to update address and logo: {e}")
 
     def Clinic_Timing(self):
         win = tk.Toplevel(self.app.root)
@@ -909,17 +1029,19 @@ class Personal:
             conn = self.get_db_connection()
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT First_Name, Last_Name FROM Doctors ORDER BY First_Name, Last_Name"
+                "SELECT First_Name, Last_Name, Qualification FROM Doctors ORDER BY First_Name, Last_Name"
             )
-            for first, last in cursor.fetchall():
+            for first, last, qual in cursor.fetchall():
                 name = f"Dr. {first or ''} {last or ''}".strip()
+                if qual and qual.strip():
+                    name += f" {qual.strip()}"
                 if name != "Dr.":
                     names.append(name)
             conn.close()
         except Exception:
             pass
         if not names:
-            names = ["Dr. Anoop", "Dr. Terry"]
+            names = ["Dr. ANOOP KUMAR. B D S", "Dr. Terry"]
         return names
 
     def _get_treatment_names(self):
@@ -2177,15 +2299,23 @@ class Personal:
         for item in self.doctor_tree.get_children():
             self.doctor_tree.delete(item)
 
-        sample_appointments = [
-            ("001", "Jayesh K", "Sivan", "9588111065"),
-            ("002", "Sreekala K", "Sivan", "9588111065"),
-            ("003", "Seema K", "Sivan", "9588111065"),
-            ("004", "Unnikrishnan K", "Sivan", "9588111065"),
-        ]
-
-        for doctor in sample_appointments:
-            self.doctor_tree.insert("", "end", values=doctor)
+        try:
+            conn = self.get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT id, Patient_Name, Notes, Mobile_Number1 FROM Appointments WHERE Date = ? ORDER BY Time, id",
+                (date,)
+            )
+            rows = cursor.fetchall()
+            conn.close()
+            for r in rows:
+                pid = f"{r[0]:03d}" if isinstance(r[0], int) else str(r[0])
+                pname = str(r[1]) if r[1] else ""
+                purpose = str(r[2]) if r[2] else ""
+                mobile = str(r[3]) if r[3] else ""
+                self.doctor_tree.insert("", "end", values=(pid, pname, purpose, mobile))
+        except Exception as e:
+            print(f"Error fetching doctor appointments: {e}")
 
     
 

@@ -167,11 +167,12 @@ class Receipt:
         action_frame = tk.Frame(self.right_frame)
         action_frame.pack(fill="x", padx=15, pady=10)
 
-        tk.Button(action_frame, text="Add", font=('Arial', 10), width=14, command=self.clear_receipt_form).pack(side="left", padx=5)
-        tk.Button(action_frame, text="Save Receipt", font=('Arial', 10, 'bold'), bg="#2e7d32", fg="white", width=15, command=self.save_receipt).pack(side="left", padx=5)
-        tk.Button(action_frame, text="Delete Selected", font=('Arial', 10), width=15, command=self.delete_receipt).pack(side="left", padx=5)
-        tk.Button(action_frame, text="Print Voucher", font=('Arial', 10), width=14, command=self.print_voucher).pack(side="left", padx=5)
-        tk.Button(action_frame, text="Close", font=('Arial', 10), width=12, command=self.close).pack(side="left", padx=5)
+        tk.Button(action_frame, text="Add", font=('Arial', 10, 'bold'), bg="#2196F3", fg="white", width=12, command=self.clear_receipt_form).pack(side="left", padx=4)
+        tk.Button(action_frame, text="Save Receipt", font=('Arial', 10, 'bold'), bg="#2E7D32", fg="white", width=14, command=self.save_receipt).pack(side="left", padx=4)
+        tk.Button(action_frame, text="Delete Selected", font=('Arial', 10, 'bold'), bg="#C62828", fg="white", width=14, command=self.delete_receipt).pack(side="left", padx=4)
+        tk.Button(action_frame, text="Print Voucher", font=('Arial', 10, 'bold'), bg="#FF9800", fg="white", width=13, command=self.print_voucher).pack(side="left", padx=4)
+        tk.Button(action_frame, text="Refresh", font=('Arial', 10, 'bold'), bg="#00897B", fg="white", width=10, command=self.load_receipts_data).pack(side="left", padx=4)
+        tk.Button(action_frame, text="Close", font=('Arial', 10, 'bold'), bg="#757575", fg="white", width=10, command=self.close).pack(side="left", padx=4)
 
         self.total_receipt_var = tk.StringVar(value="Total Receipts: ₹0.00")
         total_lbl = tk.Label(action_frame, textvariable=self.total_receipt_var, font=('Arial', 11, 'bold'), fg="navy")

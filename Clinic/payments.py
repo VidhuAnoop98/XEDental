@@ -167,11 +167,12 @@ class Payments:
         action_frame = tk.Frame(self.right_frame)
         action_frame.pack(fill="x", padx=15, pady=10)
 
-        tk.Button(action_frame, text="Add", font=('Arial', 10), width=14, command=self.clear_payment_form).pack(side="left", padx=5)
-        tk.Button(action_frame, text="Save Payment", font=('Arial', 10, 'bold'), bg="#2e7d32", fg="white", width=15, command=self.save_payment).pack(side="left", padx=5)
-        tk.Button(action_frame, text="Delete Selected", font=('Arial', 10), width=15, command=self.delete_payment).pack(side="left", padx=5)
-        tk.Button(action_frame, text="Print Voucher", font=('Arial', 10), width=14, command=lambda: self.print_voucher("Payment")).pack(side="left", padx=5)
-        tk.Button(action_frame, text="Close", font=('Arial', 10), width=12, command=self.close).pack(side="left", padx=5)
+        tk.Button(action_frame, text="Add", font=('Arial', 10, 'bold'), bg="#2196F3", fg="white", width=12, command=self.clear_payment_form).pack(side="left", padx=4)
+        tk.Button(action_frame, text="Save Payment", font=('Arial', 10, 'bold'), bg="#C62828", fg="white", width=14, command=self.save_payment).pack(side="left", padx=4)
+        tk.Button(action_frame, text="Delete Selected", font=('Arial', 10, 'bold'), bg="#D32F2F", fg="white", width=14, command=self.delete_payment).pack(side="left", padx=4)
+        tk.Button(action_frame, text="Print Voucher", font=('Arial', 10, 'bold'), bg="#FF9800", fg="white", width=13, command=lambda: self.print_voucher("Payment")).pack(side="left", padx=4)
+        tk.Button(action_frame, text="Refresh", font=('Arial', 10, 'bold'), bg="#00897B", fg="white", width=10, command=self.load_payments_data).pack(side="left", padx=4)
+        tk.Button(action_frame, text="Close", font=('Arial', 10, 'bold'), bg="#757575", fg="white", width=10, command=self.close).pack(side="left", padx=4)
 
         self.total_payment_var = tk.StringVar(value="Total Payments: ₹0.00")
         total_lbl = tk.Label(action_frame, textvariable=self.total_payment_var, font=('Arial', 11, 'bold'), fg="navy")

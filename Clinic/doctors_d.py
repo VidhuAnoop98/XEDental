@@ -612,6 +612,9 @@ class Doctors:
         has_present_items = False
         if hasattr(self, 'doc_tree') and self.doc_tree:
             for child in self.doc_tree.get_children():
+                tags = self.doc_tree.item(child).get("tags", [])
+                if "past_row" in tags:
+                    continue
                 vals = self.doc_tree.item(child)["values"]
                 if not vals:
                     continue
@@ -917,6 +920,10 @@ class Doctors:
             conn.commit()
             conn.close()
             messagebox.showinfo("Success", f"Bill details successfully saved to Database (Bill ID: {bill_id})!")
+            self.manual_present_acc_items = []
+            if p_id:
+                self.load_patient_treatments(p_id)
+                self.load_patient_accounts(p_id)
         except Exception as e:
             messagebox.showerror("Database Error", f"Error saving bill: {e}")
 
@@ -993,29 +1000,38 @@ class Doctors:
             except Exception:
                 pass
         
-        # Header text
-        pdf.setFont("Times-Bold", 20)
-        pdf.setFillColor(colors.HexColor("#1A365D")) # Premium dark blue
-        pdf.drawCentredString(width / 2.0, height - 35, "ANUPAM DENTAL CLINIC")
-        
-        pdf.setFont("Helvetica", 9)
-        pdf.setFillColor(colors.HexColor("#4A5568"))
-        pdf.drawCentredString(width / 2.0, height - 50, "West Gate Vaikom - 686141")
-        
-        # Right-aligned Clinic & Resi Phone
+        # Header text & Clinic Settings lookup
+        c_name = "ANUPAM DENTAL CLINIC"
+        c_addr = "West Gate Vaikom - 686141"
         phone_str, resi_str = "Clinic : 9446046868", "Resi   : 216858"
         try:
             conn = get_db_connection(self.app)
             cursor = conn.cursor()
-            cursor.execute("SELECT key, value FROM Clinic_Settings WHERE key IN ('clinic_mobile', 'clinic_work', 'clinic_phone', 'clinic_resi')")
+            cursor.execute("SELECT key, value FROM Clinic_Settings")
             c_rows = dict(cursor.fetchall())
             conn.close()
+            c_name = (c_rows.get("clinic_work_name") or c_rows.get("clinic_name") or "ANUPAM DENTAL CLINIC").strip()
+            c_addr_name = (c_rows.get("clinic_address_name") or "West Gate Vaikom").strip()
+            c_pin = (c_rows.get("clinic_pincode") or "686141").strip()
+            if c_pin and c_pin not in c_addr_name:
+                c_addr = f"{c_addr_name} - {c_pin}"
+            else:
+                c_addr = c_addr_name if c_addr_name else "West Gate Vaikom - 686141"
+
             mob = c_rows.get("clinic_mobile") or c_rows.get("clinic_phone") or "9446046868"
             wrk = c_rows.get("clinic_work") or c_rows.get("clinic_resi") or "216858"
             phone_str = mob if ("Clinic" in mob or "clinic" in mob) else f"Clinic : {mob}"
             resi_str = wrk if ("Resi" in wrk or "resi" in wrk) else f"Resi   : {wrk}"
         except Exception:
             pass
+
+        pdf.setFont("Times-Bold", 20)
+        pdf.setFillColor(colors.HexColor("#1A365D")) # Premium dark blue
+        pdf.drawCentredString(width / 2.0, height - 35, c_name)
+        
+        pdf.setFont("Helvetica", 9)
+        pdf.setFillColor(colors.HexColor("#4A5568"))
+        pdf.drawCentredString(width / 2.0, height - 50, c_addr)
             
         pdf.setFont("Helvetica", 9)
         pdf.drawRightString(width - 40, height - 38, phone_str)

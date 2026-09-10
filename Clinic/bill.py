@@ -565,24 +565,131 @@ class Bill:
         def show_treatment_details():
             detail_win = tk.Toplevel(self.app.root)
             detail_win.title("Treatment Details")
-            detail_win.geometry("600x400")
+            detail_win.geometry("720x520")
             detail_win.transient(self.app.root)
 
-            tk.Label(detail_win, text="Treatment Details", font=("Arial", 14, "bold")).pack(pady=10)
+            tk.Label(detail_win, text="Treatment Details", font=("Arial", 14, "bold"), fg="navy").pack(pady=(10, 5))
+
+            # --- Form frame inside detail_win ---
+            form_frame = tk.LabelFrame(detail_win, text="Add Treatment", font=("Arial", 10, "bold"), padx=8, pady=6)
+            form_frame.pack(fill="x", padx=10, pady=5)
+
+            tk.Label(form_frame, text="Tooth No:", font=("Arial", 9)).grid(row=0, column=0, padx=4, pady=4, sticky="e")
+            pop_tooth_entry = tk.Entry(form_frame, width=8, font=("Arial", 9))
+            pop_tooth_entry.grid(row=0, column=1, padx=4, pady=4, sticky="w")
+
+            tk.Label(form_frame, text="Treatment:", font=("Arial", 9)).grid(row=0, column=2, padx=4, pady=4, sticky="e")
+            fee_map = self.get_treatments_and_fees() if hasattr(self, 'get_treatments_and_fees') else {}
+            treatment_list = list(fee_map.keys())
+            pop_treatment_combo = ttk.Combobox(form_frame, values=treatment_list, width=16, font=("Arial", 9))
+            pop_treatment_combo.grid(row=0, column=3, padx=4, pady=4, sticky="w")
+
+            tk.Label(form_frame, text="Amount:", font=("Arial", 9)).grid(row=0, column=4, padx=4, pady=4, sticky="e")
+            pop_amount_entry = tk.Entry(form_frame, width=10, font=("Arial", 9))
+            pop_amount_entry.grid(row=0, column=5, padx=4, pady=4, sticky="w")
+
+            tk.Label(form_frame, text="Doctor:", font=("Arial", 9)).grid(row=0, column=6, padx=4, pady=4, sticky="e")
+            doctor_names = self.get_doctor_names_from_db() if hasattr(self, 'get_doctor_names_from_db') else []
+            pop_doctor_combo = ttk.Combobox(form_frame, values=doctor_names, width=14, font=("Arial", 9))
+            if doctor_names:
+                pop_doctor_combo.set(doctor_names[0])
+            pop_doctor_combo.grid(row=0, column=7, padx=4, pady=4, sticky="w")
+
+            def on_pop_treatment_selected(event=None):
+                selected_treatment = pop_treatment_combo.get().strip()
+                if selected_treatment in fee_map:
+                    amount_val = fee_map[selected_treatment]
+                    pop_amount_entry.delete(0, 'end')
+                    amount_str = f"{amount_val:.2f}".rstrip('0').rstrip('.') if amount_val % 1 == 0 else f"{amount_val:.2f}"
+                    pop_amount_entry.insert(0, amount_str)
+
+            pop_treatment_combo.bind("<<ComboboxSelected>>", on_pop_treatment_selected)
+            pop_treatment_combo.bind("<FocusOut>", on_pop_treatment_selected)
+
+            def add_pop_treatment():
+                treatment = pop_treatment_combo.get().strip()
+                tooth = pop_tooth_entry.get().strip()
+                amount = pop_amount_entry.get().strip()
+                doctor = pop_doctor_combo.get().strip()
+
+                if not doctor and doctor_names:
+                    doctor = doctor_names[0]
+                    pop_doctor_combo.set(doctor)
+
+                trt_lower = treatment.lower()
+                if any(k in trt_lower for k in ["payment", "receipt", "paid", "cash", "qr code", "advance", "discount"]):
+                    messagebox.showwarning("Invalid Entry", "Payment and receipt items cannot be added in Treatment tree.", parent=detail_win)
+                    return
+
+                if treatment or amount:
+                    try:
+                        amt_val = float(amount) if amount else 0.0
+                    except (ValueError, TypeError):
+                        amt_val = 0.0
+
+                    item_values = (
+                        tooth if tooth else "-",
+                        treatment if treatment else "Treatment",
+                        f"{amt_val:.2f}",
+                        doctor if doctor else ""
+                    )
+
+                    detail_tree.insert("", "end", values=item_values)
+
+                    self.bill_tooth_no.delete(0, 'end')
+                    self.bill_tooth_no.insert(0, tooth)
+                    self.bill_treatment_combo.set(treatment)
+                    self.bill_amount.delete(0, 'end')
+                    self.bill_amount.insert(0, f"{amt_val:.2f}")
+                    if doctor:
+                        self.bill_doctor_combo.set(doctor)
+
+                    add_to_treatment()
+
+                    pop_treatment_combo.set('')
+                    pop_tooth_entry.delete(0, 'end')
+                    pop_amount_entry.delete(0, 'end')
+
+            def remove_pop_treatment():
+                selected = detail_tree.selection()
+                if selected:
+                    for item in selected:
+                        item_vals = detail_tree.item(item)["values"]
+                        detail_tree.delete(item)
+                        for child in bill_tree.get_children():
+                            b_vals = bill_tree.item(child)["values"]
+                            if [str(x) for x in b_vals] == [str(x) for x in item_vals]:
+                                tags = bill_tree.item(child).get("tags", [])
+                                if "past_row" in tags:
+                                    messagebox.showwarning("Cannot Delete", "Past finalized treatments cannot be deleted.", parent=detail_win)
+                                    continue
+                                bill_tree.delete(child)
+                                break
+                    update_bill_total()
+                else:
+                    messagebox.showwarning("No Selection", "Please select a treatment row to delete.", parent=detail_win)
+
+            btn_row = tk.Frame(form_frame)
+            btn_row.grid(row=1, column=0, columnspan=8, pady=(6, 2))
+
+            tk.Button(btn_row, text="Add Treatment", font=("Arial", 9, "bold"),
+                      bg="#4CAF50", fg="white", command=add_pop_treatment).pack(side="left", padx=5)
+            tk.Button(btn_row, text="Delete Treatment", font=("Arial", 9, "bold"),
+                      bg="#F44336", fg="white", command=remove_pop_treatment).pack(side="left", padx=5)
 
             cols = ("Tooth No", "Treatment", "Amount", "Doctor")
-            detail_tree = ttk.Treeview(detail_win, columns=cols, show="headings", height=12)
+            detail_tree = ttk.Treeview(detail_win, columns=cols, show="headings", height=10)
             for col in cols:
                 detail_tree.heading(col, text=col)
-                detail_tree.column(col, width=40)
+                detail_tree.column(col, width=100, anchor="center")
             detail_tree.pack(fill="both", expand=True, padx=10, pady=5)
 
             for child in bill_tree.get_children():
                 values = bill_tree.item(child)["values"]
                 detail_tree.insert("", "end", values=values)
 
-            tk.Button(detail_win, text="Close", font=("Arial", 11),
-                      command=detail_win.destroy).pack(pady=10)
+            tk.Button(detail_win, text="Close", font=("Arial", 10, "bold"), bg="#6c757d", fg="white",
+                      command=detail_win.destroy).pack(pady=8)
 
         if not hasattr(self, 'treatments_list'):
             self.treatments_list = []

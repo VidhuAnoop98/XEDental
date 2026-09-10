@@ -101,6 +101,61 @@ class Registration:
 
     def lab(self):
         Lab(self.app)
+
+    def open_calendar(self, entry_widget):
+        try:
+            from tkcalendar import Calendar
+        except ImportError:
+            messagebox.showinfo("Calendar", "Please enter date manually in format DD-MM-YYYY (e.g. 01-04-2026).")
+            return
+
+        win = tk.Toplevel(self.app.root)
+        win.title("Select Date")
+        win.geometry("280x260")
+        win.transient(self.app.root)
+
+        try:
+            win.grab_set()
+        except Exception:
+            pass
+
+        cal = Calendar(win, selectmode="day", date_pattern="dd-mm-yyyy")
+        cal.pack(padx=10, pady=10, fill="both", expand=True)
+
+        def close_win():
+            try:
+                win.grab_release()
+            except Exception:
+                pass
+            win.destroy()
+
+        def select():
+            sel_d = cal.get_date()
+            entry_widget.delete(0, tk.END)
+            entry_widget.insert(0, sel_d)
+            close_win()
+            if hasattr(self, 'filter_appointments_by_date'):
+                self.filter_appointments_by_date(sel_d)
+
+        win.protocol("WM_DELETE_WINDOW", close_win)
+        tk.Button(win, text="OK", font=("Arial", 9, "bold"), bg="#28a745", fg="white", width=10, command=select).pack(pady=5)
+
+    def filter_appointments_by_date(self, target_date=None):
+        if not hasattr(self, 'patient_tree') or not self.patient_tree:
+            return
+
+        sel_date = target_date or (self.entry_date.get().strip() if hasattr(self, 'entry_date') else "")
+
+        for child in self.patient_tree.get_children():
+            self.patient_tree.delete(child)
+
+        selected_doc = self.Doctor_var.get().strip() if hasattr(self, 'Doctor_var') and self.Doctor_var else ""
+        for row in get_all_appointments(self.app):
+            app_date = row[9] if len(row) > 9 and row[9] else ""
+            if not sel_date or app_date == sel_date:
+                treatment, doc = get_patient_latest_treatment(self.app, row[0])
+                doc_name = doc if doc else selected_doc
+                self.patient_tree.insert("", "end", values=(self.format_patient_id(str(row[0])), row[1], row[5], treatment, doc_name))
         
     def registration_workspace(self):
         # Initialize patient_data dictionary
@@ -188,9 +243,16 @@ class Registration:
 
         tk.Label(reg, text="Date:", font=('Arial', 8)).grid(row=1, column=4, padx=(10, 5), pady=10, sticky='e')
         date_str = datetime.now().strftime("%d-%m-%Y")
-        self.entry_date = tk.Entry(reg, font=('Arial', 8), width=10)
+        date_frame = tk.Frame(reg)
+        date_frame.grid(row=1, column=5, padx=(0, 20), pady=10, sticky='w')
+
+        self.entry_date = tk.Entry(date_frame, font=('Arial', 8), width=10)
         self.entry_date.insert(0, date_str)
-        self.entry_date.grid(row=1, column=5, padx=(0, 20), pady=10, sticky='w')
+        self.entry_date.pack(side="left")
+        self.entry_date.bind("<KeyRelease>", lambda e: self.filter_appointments_by_date())
+
+        btn_cal_date = tk.Button(date_frame, text="📅", font=('Arial', 8), bg="#17a2b8", fg="white", bd=1, cursor="hand2", command=lambda: self.open_calendar(self.entry_date))
+        btn_cal_date.pack(side="left", padx=(2, 0))
 
         tk.Label(reg, text="Time:", font=('Arial', 8)).grid(row=2, column=0, padx=(10, 5), pady=10, sticky='e')
         time_str = datetime.now().strftime("%I:%M %p")
@@ -392,8 +454,9 @@ class Registration:
                 pid_str = "1"
                 reg_str = "3001"
 
+            formatted_pid = self.format_patient_id(pid_str)
             self.patient_data = {
-                "patientid": pid_str,
+                "patientid": formatted_pid,
                 "regno": reg_str,
                 "patientname": self.entry_name.get().strip(),
                 "address1": self.entry_address1.get().strip(),
@@ -441,7 +504,7 @@ class Registration:
             
             # Pre-populate billing entry boxes
             self.bill_patientid.delete(0, 'end')
-            self.bill_patientid.insert(0, self.format_patient_id(self.patient_data["patientid"]))
+            self.bill_patientid.insert(0, self.patient_data["patientid"])
             self.bill_regno.delete(0, 'end')
             self.bill_regno.insert(0, self.patient_data["regno"])
             self.bill_patientname.delete(0, 'end')
@@ -470,13 +533,18 @@ class Registration:
                 if app_date == today_str:
                     treatment, doc = get_patient_latest_treatment(self.app, row[0])
                     doc_name = doc if doc else selected_doc
-                    patient_tree.insert("", "end", values=(row[0], row[1], row[5], treatment, doc_name))
+                    patient_tree.insert("", "end", values=(self.format_patient_id(str(row[0])), row[1], row[5], treatment, doc_name))
 
-            # Refresh history tree
+            # Refresh history tree (full treeview)
             for child in history_tree.get_children():
                 history_tree.delete(child)
             for row in get_all_appointments(self.app):
-                history_tree.insert("", "end", values=(row[0], row[1], row[5]))
+                history_tree.insert("", "end", values=(self.format_patient_id(str(row[0])), row[1], row[5]))
+
+            # Refresh right side treatment & account treeviews and select patient
+            self.load_patient_treatments(pid_str)
+            self.load_patient_accounts(pid_str)
+            self.select_patient_by_id(pid_str)
 
             messagebox.showinfo("Success", "Appointment saved successfully!")
             # Open bill view
@@ -858,6 +926,18 @@ class Registration:
                 self.doctor_committs.delete("1.0", "end")
                 if comm_text:
                     self.doctor_committs.insert("1.0", comm_text)
+
+            try:
+                conn_d = get_db_connection(self.app)
+                cursor_d = conn_d.cursor()
+                cursor_d.execute("CREATE TABLE IF NOT EXISTS Patient_Diseases (id INTEGER PRIMARY KEY AUTOINCREMENT, Patient_ID TEXT, Reg_No TEXT, Disease TEXT, Date TEXT, Reading TEXT)")
+                cursor_d.execute("SELECT Disease, Date, Reading FROM Patient_Diseases WHERE Patient_ID=? OR Reg_No=? ORDER BY id ASC", (str(row[0]), formatted_regno))
+                db_diseases = cursor_d.fetchall()
+                d_list = [list(dr) for dr in db_diseases]
+                self.patient_data["diseases"] = d_list
+                conn_d.close()
+            except Exception:
+                pass
 
     def add_manual_acc_item(self):
         if not hasattr(self, 'manual_present_acc_items'):

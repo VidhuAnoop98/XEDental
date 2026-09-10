@@ -41,15 +41,22 @@ def get_clinic_card_info(app=None):
     except Exception:
         settings = {}
 
-    clinic_name = settings.get("clinic_name", "ANUPAM DENTAL CLINIC").strip()
+    clinic_name = (settings.get("clinic_work_name") or settings.get("clinic_name") or "ANUPAM DENTAL CLINIC").strip()
     if not clinic_name:
         clinic_name = "ANUPAM DENTAL CLINIC"
 
-    mobile = settings.get("clinic_mobile", "9446046868").strip()
+    address_name = (settings.get("clinic_address_name") or "West Gate Vaikom").strip()
+    pincode = (settings.get("clinic_pincode") or "686141").strip()
+    mobile = (settings.get("clinic_mobile") or "9446046868").strip()
     if not mobile:
         mobile = "9446046868"
 
-    clinic_line = f"West Gate Vaikom - 686141, Ph : {mobile}"
+    if pincode and pincode not in address_name:
+        addr_str = f"{address_name} - {pincode}"
+    else:
+        addr_str = address_name if address_name else "West Gate Vaikom - 686141"
+
+    clinic_line = f"{addr_str}, Ph : {mobile}"
 
     open_time = settings.get("clinic_open_time", "10:00 AM").strip()
     close_time = settings.get("clinic_close_time", "07:00 PM").strip()
@@ -63,7 +70,7 @@ def get_clinic_card_info(app=None):
     return clinic_name, clinic_line, clinic_hours
 
 def convert_pdf_to_docx(pdf_path, docx_path=None):
-    """Converts a generated PDF card file into an editable MS Word (.docx) document."""
+    """Converts a generated PDF card file into an editable MS Word (.docx) document quietly without console logging."""
     if not docx_path:
         docx_path = os.path.splitext(pdf_path)[0] + ".docx"
 
@@ -81,13 +88,22 @@ def convert_pdf_to_docx(pdf_path, docx_path=None):
             counter += 1
 
     try:
+        import logging
+        import contextlib
+        import warnings
+        warnings.filterwarnings("ignore", category=UserWarning)
+        warnings.filterwarnings("ignore", category=DeprecationWarning)
+
+        logging.getLogger("pdf2docx").setLevel(logging.ERROR)
+
         from pdf2docx import Converter
-        cv = Converter(pdf_path)
-        cv.convert(target_path)
-        cv.close()
+        with open(os.devnull, 'w') as devnull:
+            with contextlib.redirect_stdout(devnull), contextlib.redirect_stderr(devnull):
+                cv = Converter(pdf_path)
+                cv.convert(target_path)
+                cv.close()
         return target_path
-    except Exception as exc:
-        print(f"pdf2docx conversion error: {exc}")
+    except Exception:
         return target_path
 
 def open_file(filepath):
@@ -420,15 +436,37 @@ class Card:
                 draw_page_preview()
 
         def on_mouse_wheel(event):
-            if getattr(event, "delta", 0) > 0 or getattr(event, "num", 0) == 4:
-                zoom_in()
+            state_val = getattr(event, "state", 0)
+            is_up = getattr(event, "delta", 0) > 0 or getattr(event, "num", 0) == 4
+            is_ctrl = bool(state_val & 4 or state_val & 0x0004 or state_val & 0x20000)
+            is_shift = bool(state_val & 1 or state_val & 0x0001)
+
+            if is_ctrl:
+                if is_up:
+                    zoom_in()
+                else:
+                    zoom_out()
+            elif is_shift:
+                if is_up:
+                    cv.xview_scroll(-2, "units")
+                else:
+                    cv.xview_scroll(2, "units")
             else:
-                zoom_out()
+                if is_up:
+                    cv.yview_scroll(-2, "units")
+                else:
+                    cv.yview_scroll(2, "units")
             return "break"
 
         cv.bind("<MouseWheel>", on_mouse_wheel)
-        cv.bind("<Button-4>",   on_mouse_wheel)
-        cv.bind("<Button-5>",   on_mouse_wheel)
+        cv.bind("<Control-MouseWheel>", on_mouse_wheel)
+        cv.bind("<Shift-MouseWheel>", on_mouse_wheel)
+        cv.bind("<Button-4>", on_mouse_wheel)
+        cv.bind("<Button-5>", on_mouse_wheel)
+        cv.bind("<Control-Button-4>", on_mouse_wheel)
+        cv.bind("<Control-Button-5>", on_mouse_wheel)
+        cv.bind("<Shift-Button-4>", on_mouse_wheel)
+        cv.bind("<Shift-Button-5>", on_mouse_wheel)
 
         # ── control bar ──────────────────────────────────────────────────────
         ctrl_frame = tk.Frame(ws)
@@ -564,7 +602,7 @@ class Card:
             c.setFont("Times-Bold", h*0.095)
             c.drawCentredString(x0+w/2, (tt+tb)/2 - h*0.028, CLINIC_NAME)
 
-            _pdf_draw_logo(c, x0+w*0.820, top_y(0.40), w*0.17, h*0.42)
+            _pdf_draw_logo(c, x0+w*0.820, top_y(0.40), w*0.23, h*0.42)
 
             fx = x0 + w*0.045
             n  = len(FIELD_LABELS)
@@ -667,6 +705,22 @@ class Card:
             def ppx(pt): return OX + int(pt * scale)
             def ppy(pt): return OY + int((PAGE_H - pt) * scale)
 
+            # Create logo image scaled to current preview zoom level
+            preview_logo = None
+            sample_tkw = int(CARD_W * scale)
+            sample_tkh = int(CARD_H * scale)
+            lbox_w = max(1, int(sample_tkw * 0.50))
+            lbox_h = max(1, int(sample_tkh * 0.30))
+            if os.path.isfile(LOGO_PATH):
+                try:
+                    from PIL import Image as _PI, ImageTk as _ITk
+                    _img = _PI.open(LOGO_PATH)
+                    _img.thumbnail((lbox_w, lbox_h))
+                    preview_logo = _ITk.PhotoImage(_img)
+                    self._sc_logo = preview_logo
+                except Exception:
+                    preview_logo = None
+
             for r in range(ROWS):
                 for col in range(COLS):
                     x0_pt    = MARGIN + col * (CARD_W + COL_GAP)
@@ -697,23 +751,10 @@ class Card:
                     # logo
                     logo_cx = tkx + int(tkw * 0.820)
                     logo_cy = ttopy(0.40)
-                    lbox_w  = int(tkw * 0.50)
-                    lbox_h  = int(tkh * 0.42)
-                    logo_r  = min(lbox_w, lbox_h) // 2
-                    if os.path.isfile(LOGO_PATH):
-                        try:
-                            from PIL import Image as _PI, ImageTk as _ITk
-                            _img = _PI.open(LOGO_PATH)
-                            _img.thumbnail((lbox_w, lbox_h))
-                            if not hasattr(self, "_sc_logo"):
-                                self._sc_logo = _ITk.PhotoImage(_img)
-                            cv.create_image(logo_cx, logo_cy,
-                                            image=self._sc_logo)
-                        except Exception:
-                            cv.create_oval(logo_cx-logo_r, logo_cy-logo_r,
-                                           logo_cx+logo_r, logo_cy+logo_r,
-                                           outline="#1a1a1a")
+                    if preview_logo:
+                        cv.create_image(logo_cx, logo_cy, image=preview_logo)
                     else:
+                        logo_r = min(lbox_w, lbox_h) // 2
                         cv.create_oval(logo_cx-logo_r, logo_cy-logo_r,
                                        logo_cx+logo_r, logo_cy+logo_r,
                                        outline="#1a1a1a")

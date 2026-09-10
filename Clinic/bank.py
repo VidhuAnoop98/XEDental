@@ -81,11 +81,12 @@ class Bank:
         btn_frame = tk.Frame(self.right_frame)
         btn_frame.pack(pady=10)
 
-        tk.Button(btn_frame, text="Add", font=('Arial', 10), width=12, command=self.clear_bank_form).pack(side="left", padx=5)
-        tk.Button(btn_frame, text="Save Bank", font=('Arial', 10, 'bold'), bg="#2e7d32", fg="white", width=14, command=self.save_bank).pack(side="left", padx=5)
-        tk.Button(btn_frame, text="Delete Selected", font=('Arial', 10), width=14, command=self.delete_bank).pack(side="left", padx=5)
-        tk.Button(btn_frame, text="Delete All", font=('Arial', 10), bg="#c62828", fg="white", width=12, command=self.delete_all_banks).pack(side="left", padx=5)
-        tk.Button(btn_frame, text="Close", font=('Arial', 10), width=10, command=self.close).pack(side="left", padx=5)
+        tk.Button(btn_frame, text="Add", font=('Arial', 10, 'bold'), bg="#2196F3", fg="white", width=12, command=self.clear_bank_form).pack(side="left", padx=4)
+        tk.Button(btn_frame, text="Save Bank", font=('Arial', 10, 'bold'), bg="#283593", fg="white", width=14, command=self.save_bank).pack(side="left", padx=4)
+        tk.Button(btn_frame, text="Delete Selected", font=('Arial', 10, 'bold'), bg="#D32F2F", fg="white", width=14, command=self.delete_bank).pack(side="left", padx=4)
+        tk.Button(btn_frame, text="Delete All", font=('Arial', 10, 'bold'), bg="#880E4F", fg="white", width=12, command=self.delete_all_banks).pack(side="left", padx=4)
+        tk.Button(btn_frame, text="Refresh", font=('Arial', 10, 'bold'), bg="#00897B", fg="white", width=10, command=self._load_banks).pack(side="left", padx=4)
+        tk.Button(btn_frame, text="Close", font=('Arial', 10, 'bold'), bg="#757575", fg="white", width=10, command=self.close).pack(side="left", padx=4)
 
         self._selected_bank_id = None
         self._load_banks()

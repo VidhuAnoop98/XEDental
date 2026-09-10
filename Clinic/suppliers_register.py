@@ -133,11 +133,12 @@ class Suppliers_Register:
                   command=self._add_ledger_entry, **btn_cfg).pack(side="left", padx=3)
         tk.Button(btn_row, text="DELETE", bg="#C0392B", fg="white",
                   command=self._delete_ledger_entry, **btn_cfg).pack(side="left", padx=3)
+        tk.Button(btn_row, text="REFRESH", bg="#16A085", fg="white",
+                  command=self._refresh, **btn_cfg).pack(side="left", padx=3)
         tk.Button(btn_row, text="CLOSE", bg="#7F8C8D", fg="white",
                   command=self._close_suppliers, **btn_cfg).pack(side="left", padx=3)
         tk.Button(btn_row, text="Print", bg="#E74C3C", fg="white",
                   command=self._print_ledger, **btn_cfg).pack(side="left", padx=3)
-
 
         # --- Right: Calendar ---
         cal_lf = tk.LabelFrame(top_frame, text="Calendar",
@@ -146,8 +147,32 @@ class Suppliers_Register:
         cal_lf.pack(side="right", padx=(4, 0), pady=4)
         cal_lf.pack_propagate(False)
 
-        self.sr_start_date.bind("<FocusIn>", lambda e: self.cal_target_var.set("start"))
-        self.sr_end_date.bind("<FocusIn>", lambda e: self.cal_target_var.set("end"))
+        self.cal_target_var = tk.StringVar(value="start")
+
+        def _on_start_focus(event=None):
+            self.cal_target_var.set("start")
+            val = self.sr_start_date.get().strip()
+            if val:
+                try:
+                    dt_obj = datetime.strptime(val, "%d-%m-%Y")
+                    self.sup_cal.selection_set(dt_obj)
+                except Exception:
+                    pass
+
+        def _on_end_focus(event=None):
+            self.cal_target_var.set("end")
+            val = self.sr_end_date.get().strip()
+            if val:
+                try:
+                    dt_obj = datetime.strptime(val, "%d-%m-%Y")
+                    self.sup_cal.selection_set(dt_obj)
+                except Exception:
+                    pass
+
+        self.sr_start_date.bind("<FocusIn>", _on_start_focus)
+        self.sr_end_date.bind("<FocusIn>", _on_end_focus)
+        self.sr_start_date.bind("<KeyRelease>", lambda e: self._load_ledger())
+        self.sr_end_date.bind("<KeyRelease>", lambda e: self._load_ledger())
 
         self.sup_cal = Calendar(cal_lf, selectmode="day",
                                 date_pattern="dd-mm-yyyy", font=("Arial", 10))
@@ -158,6 +183,7 @@ class Suppliers_Register:
             target = self.sr_end_date if self.cal_target_var.get() == "end" else self.sr_start_date
             target.delete(0, "end")
             target.insert(0, selected)
+            self._load_ledger()
         self.sup_cal.bind("<<CalendarSelected>>", _on_cal_select)
 
         # ── BOTTOM row: Ledger table | Product table ──
@@ -176,7 +202,7 @@ class Suppliers_Register:
         ledger_tf.pack(fill="both", expand=True, padx=6, pady=6)
 
         self.ledger_tree = ttk.Treeview(
-            ledger_tf, columns=ledger_cols, show="headings", height=10
+            ledger_tf, columns=ledger_cols, show="headings", height=8
         )
         for col, w in zip(ledger_cols, ledger_widths):
             self.ledger_tree.heading(col, text=col)
@@ -220,7 +246,7 @@ class Suppliers_Register:
         prod_tf.pack(fill="both", expand=True, padx=6, pady=6)
 
         self.product_tree = ttk.Treeview(
-            prod_tf, columns=prod_cols, show="headings", height=10
+            prod_tf, columns=prod_cols, show="headings", height=8
         )
         for col, w in zip(prod_cols, prod_widths):
             self.product_tree.heading(col, text=col)
@@ -289,6 +315,23 @@ class Suppliers_Register:
         except Exception as e:
             messagebox.showerror("DB Error", str(e))
 
+    def _refresh(self):
+        for attr in ("sr_start_date", "sr_end_date", "sr_opening", "sr_inv_no",
+                     "sr_particulars", "sr_receipt", "sr_payment",
+                     "sup_name_entry", "sup_address_entry"):
+            if hasattr(self, attr):
+                getattr(self, attr).delete(0, "end")
+        self._selected_supplier_id = None
+        for tree in (self.supplier_tree, self.ledger_tree, self.product_tree):
+            if hasattr(self, tree.winfo_name()):
+                try:
+                    tree.selection_remove(tree.selection())
+                except Exception:
+                    pass
+        self._load_suppliers()
+        self._clear_ledger_table()
+        self._clear_product_table()
+
     def _delete_supplier(self):
         sel = self.supplier_tree.focus()
         if not sel:
@@ -339,14 +382,43 @@ class Suppliers_Register:
                 "FROM Supplier_Ledger WHERE Supplier_ID=? ORDER BY Date",
                 (self._selected_supplier_id,)
             )
+
+            start_str = self.sr_start_date.get().strip() if hasattr(self, 'sr_start_date') else ""
+            end_str = self.sr_end_date.get().strip() if hasattr(self, 'sr_end_date') else ""
+
+            start_dt, end_dt = None, None
+            if start_str:
+                try:
+                    start_dt = datetime.strptime(start_str, "%d-%m-%Y")
+                except Exception:
+                    pass
+            if end_str:
+                try:
+                    end_dt = datetime.strptime(end_str, "%d-%m-%Y")
+                except Exception:
+                    pass
+
             total_r, total_p = 0.0, 0.0
-            for idx, row in enumerate(c.fetchall()):
+            row_count = 0
+            for row in c.fetchall():
                 rid, dt, inv, part, rcpt, pay = row
+
+                if dt and (start_dt or end_dt):
+                    try:
+                        row_dt = datetime.strptime(dt, "%d-%m-%Y")
+                        if start_dt and row_dt < start_dt:
+                            continue
+                        if end_dt and row_dt > end_dt:
+                            continue
+                    except Exception:
+                        pass
+
                 rcpt = rcpt or 0
                 pay = pay or 0
                 total_r += rcpt
                 total_p += pay
-                tag = "evenrow" if idx % 2 == 0 else "oddrow"
+                tag = "evenrow" if row_count % 2 == 0 else "oddrow"
+                row_count += 1
                 self.ledger_tree.insert("", "end", iid=str(rid),
                     values=(dt or "", inv or "", part or "",
                             f"{rcpt:.2f}", f"{pay:.2f}"),

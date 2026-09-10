@@ -127,6 +127,8 @@ class MedicineStock:
                   command=self._add_ledger_entry, **btn_cfg).pack(side="left", padx=3)
         tk.Button(btn_row, text="DELETE", bg="#C0392B", fg="white",
                   command=self._delete_ledger_entry, **btn_cfg).pack(side="left", padx=3)
+        tk.Button(btn_row, text="REFRESH", bg="#16A085", fg="white",
+                  command=self._refresh, **btn_cfg).pack(side="left", padx=3)
         tk.Button(btn_row, text="CLOSE", bg="#7F8C8D", fg="white",
                   command=self._close_suppliers, **btn_cfg).pack(side="left", padx=3)
         tk.Button(btn_row, text="Print", bg="#E74C3C", fg="white",
@@ -140,8 +142,30 @@ class MedicineStock:
         cal_lf.pack(side="right", padx=(10, 0), pady=2)
         cal_lf.pack_propagate(False)
 
-        self.sr_start_date.bind("<FocusIn>", lambda e: self.cal_target_var.set("start"))
-        self.sr_end_date.bind("<FocusIn>", lambda e: self.cal_target_var.set("end"))
+        self.cal_target_var = tk.StringVar(value="start")
+
+        def _on_start_focus(event=None):
+            self.cal_target_var.set("start")
+            val = self.sr_start_date.get().strip()
+            if val:
+                try:
+                    dt_obj = datetime.strptime(val, "%d-%m-%Y")
+                    self.sup_cal.selection_set(dt_obj)
+                except Exception:
+                    pass
+
+        def _on_end_focus(event=None):
+            self.cal_target_var.set("end")
+            val = self.sr_end_date.get().strip()
+            if val:
+                try:
+                    dt_obj = datetime.strptime(val, "%d-%m-%Y")
+                    self.sup_cal.selection_set(dt_obj)
+                except Exception:
+                    pass
+
+        self.sr_start_date.bind("<FocusIn>", _on_start_focus)
+        self.sr_end_date.bind("<FocusIn>", _on_end_focus)
 
         self.sup_cal = Calendar(cal_lf, selectmode="day",
                                 date_pattern="dd-mm-yyyy", font=("Arial", 10))
@@ -284,6 +308,23 @@ class MedicineStock:
             self._load_suppliers()
         except Exception as e:
             messagebox.showerror("DB Error", str(e))
+
+    def _refresh(self):
+        for attr in ("sr_start_date", "sr_end_date", "sr_opening", "sr_inv_no",
+                     "sr_particulars", "sr_receipt", "sr_payment",
+                     "sup_name_entry", "sup_address_entry"):
+            if hasattr(self, attr):
+                getattr(self, attr).delete(0, "end")
+        self._selected_supplier_id = None
+        for tree in (self.supplier_tree, self.ledger_tree, self.product_tree):
+            if hasattr(self, tree.winfo_name()):
+                try:
+                    tree.selection_remove(tree.selection())
+                except Exception:
+                    pass
+        self._load_suppliers()
+        self._clear_ledger_table()
+        self._clear_product_table()
 
     def _delete_supplier(self):
         sel = self.supplier_tree.focus()

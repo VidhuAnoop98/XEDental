@@ -1,6 +1,6 @@
 import os
 import sqlite3
-from accounts import get_db_connection
+from accounts import get_db_connection 
 import tkinter as tk
 from tkinter import ttk, messagebox
 from datetime import datetime, date
@@ -105,8 +105,9 @@ class Head:
         button_frame = tk.Frame(table_frame, bg="white")
         button_frame.pack(pady=10)
 
-        tk.Button(button_frame, text="Add Head", font=("Arial", 10, "bold"), bg="green", fg="white", command=add_head, width=12).grid(row=0, column=0, padx=5)
-        tk.Button(button_frame, text="Delete Selected", font=("Arial", 10), command=delete_head, width=14).grid(row=0, column=1, padx=5)
-        tk.Button(button_frame, text="Close", font=("Arial", 10), command=win.destroy, width=10).grid(row=0, column=2, padx=5)
+        tk.Button(button_frame, text="Add Head", font=("Arial", 10, "bold"), bg="#6A1B9A", fg="white", command=add_head, width=12).grid(row=0, column=0, padx=5)
+        tk.Button(button_frame, text="Delete Selected", font=("Arial", 10, "bold"), bg="#C62828", fg="white", command=delete_head, width=14).grid(row=0, column=1, padx=5)
+        tk.Button(button_frame, text="Refresh", font=("Arial", 10, "bold"), bg="#00897B", fg="white", command=load_heads, width=10).grid(row=0, column=2, padx=5)
+        tk.Button(button_frame, text="Close", font=("Arial", 10, "bold"), bg="#757575", fg="white", command=win.destroy, width=10).grid(row=0, column=3, padx=5)
 
         load_heads()
